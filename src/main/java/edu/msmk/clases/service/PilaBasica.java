@@ -1,4 +1,4 @@
-package edu.msmk.clases;
+package edu.msmk.clases.service;
 
 import java.util.ArrayList;
 import java.util.EmptyStackException;
@@ -7,8 +7,8 @@ import java.util.EmptyStackException;
  * Implementación de una Pila (Stack) usando ArrayList
  * Estructura LIFO (Last In, First Out)
  */
-public class PilaBasica {
-    private ArrayList<Integer> elementos;
+public class PilaBasica<T> {
+    private ArrayList<T> elementos;
     private int capacidadMaxima;
 
     /**
@@ -48,7 +48,7 @@ public class PilaBasica {
      * Complejidad: O(1) amortizado
      * @throws IllegalStateException si la pila está llena
      */
-    public void push(int elemento) {
+    public void push(T elemento) {
         if (isFull()) {
             throw new IllegalStateException("La pila está llena. Capacidad máxima: " + capacidadMaxima);
         }
@@ -60,7 +60,7 @@ public class PilaBasica {
      * Complejidad: O(1)
      * @throws EmptyStackException si la pila está vacía
      */
-    public int pop() {
+    public T pop() {
         if (isEmpty()) {
             throw new EmptyStackException();
         }
@@ -72,7 +72,7 @@ public class PilaBasica {
      * Complejidad: O(1)
      * @throws EmptyStackException si la pila está vacía
      */
-    public int top() {
+    public T top() {
         if (isEmpty()) {
             throw new EmptyStackException();
         }

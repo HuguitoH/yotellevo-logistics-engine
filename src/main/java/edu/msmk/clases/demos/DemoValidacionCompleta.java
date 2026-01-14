@@ -1,6 +1,6 @@
 package edu.msmk.clases.demos;
 
-import edu.msmk.clases.CoberturaServicio;
+import edu.msmk.clases.service.CoberturaServicio;
 import edu.msmk.clases.exchange.PeticionCliente;
 
 public class DemoValidacionCompleta {

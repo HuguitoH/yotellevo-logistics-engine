@@ -1,6 +1,15 @@
 package edu.msmk.clases;
 
+import edu.msmk.clases.model.Direccion;
+import edu.msmk.clases.service.CoberturaServicio;
+import edu.msmk.clases.service.PilaBasica;
 import edu.msmk.clases.exchange.PeticionCliente;
+import edu.msmk.clases.model.Paquete;
+import edu.msmk.clases.model.Punto;
+import edu.msmk.clases.routing.GrafoEntregas;
+import edu.msmk.clases.routing.OptimizadorRutas;
+import edu.msmk.clases.routing.VisualizadorGrafos;
+import edu.msmk.clases.service.SimuladorClientes;
 import edu.msmk.clases.service.TramoService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.CommandLineRunner;
@@ -8,15 +17,22 @@ import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.List;
 
 @Slf4j
 @SpringBootApplication
 public class ClasesApplication implements CommandLineRunner {
 
     private final TramoService tramoService;
+    private final SimuladorClientes simuladorClientes;
+    private final CoberturaServicio coberturaServicio;
 
-    public ClasesApplication(TramoService tramoService) {
+
+    public ClasesApplication(TramoService tramoService, SimuladorClientes simuladorClientes,CoberturaServicio coberturaServicio) {
         this.tramoService = tramoService;
+        this.simuladorClientes = simuladorClientes;
+        this.coberturaServicio = coberturaServicio;
     }
 
     public static void main(String[] args) {
@@ -25,34 +41,41 @@ public class ClasesApplication implements CommandLineRunner {
 
     @Override
     public void run(String... args) {
-        log.info("YoTeLoLlevo - Sistema de Entregas");
+        log.info("YoTeLoLlevo - Sistema de Entregas 2026");
 
         try {
-            // 1. CARGAR COBERTURA DESDE ARCHIVO
+            // 1. CARGAR COBERTURA (Usamos la instancia inyectada 'this.coberturaServicio')
             log.info("\n1. Cargando cobertura de tramos desde BOE...");
             long inicioGlobal = System.currentTimeMillis();
 
-            CoberturaServicio coberturaServicio = tramoService.leerTramos();
+            // IMPORTANTE: Asegúrate de que leerTramos acepte el objeto por parámetro y no devuelva uno nuevo
+            tramoService.leerTramos(this.coberturaServicio);
 
             long tiempoCarga = System.currentTimeMillis() - inicioGlobal;
             log.info("Cobertura cargada correctamente en {} ms", tiempoCarga);
-            log.info(" Provincias cubiertas: {}", coberturaServicio.numeroProvinciasCubiertas());
-            log.info(" Tramos cubiertos: {}", coberturaServicio.numeroTramosCubiertos());
+            log.info(" Provincias cubiertas: {}", this.coberturaServicio.numeroProvinciasCubiertas());
+            log.info(" Tramos cubiertos: {}", this.coberturaServicio.numeroTramosCubiertos());
 
-            // 2. DEMO: VALIDACIÓN DE PETICIONES
-            log.info("\n2. Demostracion de validacion de direcciones COMPLETAS:");
-            demoPeticiones(coberturaServicio);
+            // 2. DEMOS (Pasamos siempre la instancia inyectada 'this.coberturaServicio')
+            log.info("\n2. Demostración de validación de direcciones:");
+            demoPeticiones(this.coberturaServicio);
 
-            // 3. DEMO: PILA BÁSICA
-            log.info("\n3. Demostracion de Pila Basica (Stack LIFO):");
+            log.info("\n3. Demostración de Pila Básica:");
             demoPilaBasica();
 
-            // 4. MÉTRICAS DE RENDIMIENTO
-            log.info("\n4. Midiendo rendimiento de validaciones:");
-            medirRendimiento(coberturaServicio);
+            log.info("\n4. Demostración de Pila de Paquetes:");
+            demoPilaPaquetes();
 
-            log.info("\n");
-            log.info("Sistema inicializado correctamente");
+            log.info("\n5. Midiendo rendimiento:");
+            medirRendimiento(this.coberturaServicio);
+
+            log.info("\n6. Simulación concurrente:");
+            demoSimulacionConcurrente(this.coberturaServicio);
+
+            log.info("\n7. Optimización de rutas:");
+            demoOptimizacionRutas();
+
+            log.info("\nSistema inicializado correctamente. API lista para recibir pedidos.");
 
         } catch (IOException e) {
             log.error("Error al procesar el archivo: {}", e.getMessage());
@@ -60,6 +83,7 @@ public class ClasesApplication implements CommandLineRunner {
             log.error("Error inesperado: {}", e.getMessage(), e);
         }
     }
+
 
     /**
      * Demuestra la validación de diferentes peticiones de clientes
@@ -227,8 +251,8 @@ public class ClasesApplication implements CommandLineRunner {
 
         // Pop de elementos
         log.info("\n OPERACIÓN: POP (Extraer elementos)");
-        int elemento1 = pila.pop();
-        int elemento2 = pila.pop();
+        Integer elemento1 = (Integer) pila.pop();
+        Integer elemento2 = (Integer) pila.pop();
 
         log.info(" Extraído: {} (último en entrar, primero en salir)", elemento1);
         log.info(" Extraído: {}", elemento2);
@@ -237,6 +261,81 @@ public class ClasesApplication implements CommandLineRunner {
         log.info(" ¿Está vacía?: {}", pila.isEmpty());
 
     }
+
+    private void demoPilaPaquetes() {
+        log.info("\n=== DEMO: Pila de Paquetes (Caso Real 2026) ===");
+
+        // Asumimos que PilaBasica está correctamente implementada
+        edu.msmk.clases.service.PilaBasica<Paquete> furgoneta = new edu.msmk.clases.service.PilaBasica<>(50);
+
+        // 1. Crear Direcciones (Usando tu nueva clase de modelo edu.msmk.clases.model.Direccion)
+        edu.msmk.clases.model.Direccion dir1 = new edu.msmk.clases.model.Direccion(
+                "01", "ALEGRIA-DULANTZI", "CALLE", "TORRONDOA", "15", "01001", null, null, null);
+
+        edu.msmk.clases.model.Direccion dir2 = new edu.msmk.clases.model.Direccion(
+                "01", "ALEGRIA-DULANTZI", "AVENIDA", "AÑUA BIDEA", "8", "01002", null, null, null);
+
+        // 2. Crear Coordenadas (Puntos)
+        Punto coord1 = new Punto(42.8467, -2.5123, "Punto 1");
+        Punto coord2 = new Punto(42.8480, -2.5150, "Punto 2");
+
+        // 3. Crear paquetes respetando el nuevo constructor:
+        // (id, destinatarioString, direccionModelo, coordenadas, peso, prioridad)
+        Paquete p1 = new Paquete(
+                "PKG-001",
+                "Juan Pérez",
+                dir1,
+                coord1,
+                5.0,
+                2
+        );
+
+        Paquete p2 = new Paquete(
+                "PKG-002",
+                "María López",
+                dir2,
+                coord2,
+                3.8,
+                1
+        );
+
+        // 4. Cargar furgoneta
+        log.info("Cargando furgoneta...");
+        furgoneta.push(p1);
+        furgoneta.push(p2);
+
+        log.info("Paquetes cargados: {}", furgoneta.size());
+
+        // 5. Descargar (LIFO)
+        log.info("\nDescargando paquetes:");
+        while (!furgoneta.isEmpty()) {
+            Paquete p = furgoneta.pop();
+            log.info("→ {}", p);
+        }
+    }
+
+
+    /**
+     * Demuestra la capacidad del sistema para manejar carga concurrente
+     */
+
+    private void demoSimulacionConcurrente(CoberturaServicio coberturaServicio) {
+        // PRUEBA LIGERA (comentar después)
+        // simuladorClientes.simularCargaConcurrente(
+        //     coberturaServicio,
+        //     10,      // 10 clientes
+        //     1000     // 1,000 peticiones = 10,000 total
+        // );
+
+        // PRUEBA EXTREMA
+        simuladorClientes.simularCargaConcurrente(
+                coberturaServicio,
+                100,     // 100 clientes simultáneos
+                10000    // 10,000 peticiones cada uno = 1,000,000 total
+        );
+    }
+
+
     /**
      * Mide el rendimiento del sistema con múltiples validaciones
      */
@@ -278,4 +377,101 @@ public class ClasesApplication implements CommandLineRunner {
                 String.format("%.0f", consultasPorSegundo));
 
     }
+
+    /**
+     * Demuestra el sistema de optimización de rutas con todos los algoritmos
+     */
+    private void demoOptimizacionRutas() {
+        log.info("\n");
+        log.info("DEMO: Optimizacion de Rutas (Comparativa de Algoritmos)");
+
+        // Crear almacén
+        Punto almacen = new Punto(40.4168, -3.7038, "Almacen Central Madrid");
+
+        // Crear paquetes
+        List<Paquete> paquetes = new ArrayList<>();
+        paquetes.add(crearPaqueteDemo("PKG-001", "Juan Pérez", 40.4200, -3.7050, 2.5, 1));
+        paquetes.add(crearPaqueteDemo("PKG-002", "María López", 40.4400, -3.6900, 1.8, 2));
+        paquetes.add(crearPaqueteDemo("PKG-003", "Carlos Ruiz", 40.3900, -3.7200, 3.2, 1));
+        paquetes.add(crearPaqueteDemo("PKG-004", "Ana García", 40.4500, -3.7100, 2.0, 2));
+        paquetes.add(crearPaqueteDemo("PKG-005", "Pedro Martín", 40.4100, -3.6800, 1.5, 3));
+        paquetes.add(crearPaqueteDemo("PKG-006", "Laura Sánchez", 40.4300, -3.7300, 2.8, 2));
+        paquetes.add(crearPaqueteDemo("PKG-007", "Diego Torres", 40.3800, -3.7100, 1.9, 1));
+
+        log.info("Paquetes a entregar: {}", paquetes.size());
+
+        // Crear grafo
+        GrafoEntregas grafo = new GrafoEntregas(almacen, paquetes);
+
+        // Optimizar con diferentes algoritmos
+        OptimizadorRutas optimizador = new OptimizadorRutas();
+
+        log.info("\n--- Ruta sin optimizar ---");
+        OptimizadorRutas.ResultadoOptimizacion rutaOriginal =
+                optimizador.rutaSinOptimizar(grafo);
+
+        log.info("\n--- Nearest Neighbor ---");
+        OptimizadorRutas.ResultadoOptimizacion rutaNN =
+                optimizador.optimizarNearestNeighbor(grafo);
+
+        log.info("\n--- 2-opt (mejora de NN) ---");
+        OptimizadorRutas.ResultadoOptimizacion ruta2Opt =
+                optimizador.optimizar2Opt(grafo, rutaNN);
+
+        // Comparar resultados
+        log.info("\n");
+        log.info("COMPARATIVA:");
+        log.info("  Sin optimizar: {} km",
+                String.format("%.2f", rutaOriginal.getDistanciaTotal()));
+        log.info("  Nearest Neighbor: {} km (ahorro: {} %)",
+                String.format("%.2f", rutaNN.getDistanciaTotal()),
+                String.format("%.1f",
+                        ((rutaOriginal.getDistanciaTotal() - rutaNN.getDistanciaTotal()) /
+                                rutaOriginal.getDistanciaTotal()) * 100));
+        log.info("  2-opt: {} km (ahorro total: {} %)",
+                String.format("%.2f", ruta2Opt.getDistanciaTotal()),
+                String.format("%.1f",
+                        ((rutaOriginal.getDistanciaTotal() - ruta2Opt.getDistanciaTotal()) /
+                                rutaOriginal.getDistanciaTotal()) * 100));
+
+        // VISUALIZAR GRAFO
+        log.info("\nGenerando visualizacion del grafo...");
+
+        try {
+            VisualizadorGrafos visualizador = new VisualizadorGrafos();
+            visualizador.mostrarRutaOptimizada(grafo, ruta2Opt);
+
+            log.info("Ventana grafica mostrada.");
+            log.info("IMPORTANTE: Cierra la ventana del grafo manualmente para que el programa continue.");
+
+            // Esperar a que el usuario cierre la ventana
+            Thread.sleep(2000);
+
+        } catch (Exception e) {
+            log.error("No se pudo mostrar ventana grafica: {}", e.getMessage());
+        }
+    }
+
+    private Paquete crearPaqueteDemo(String id, String nombre, double lat, double lon, double peso, int prioridad) {
+        // 1. Creamos las coordenadas
+        Punto coordenadas = new Punto(lat, lon, "Destino " + id);
+
+        // 2. Creamos una dirección ficticia para cumplir con el constructor
+        Direccion dir = new Direccion();
+        dir.setNombreVia("Calle Demo " + id);
+        dir.setMunicipio("Madrid");
+        dir.setProvincia("Madrid");
+        dir.setNumero("1");
+
+        // 3. Retornamos el paquete real (asegúrate de que el orden de parámetros coincida con tu clase Paquete)
+        return new Paquete(
+                id,
+                nombre,
+                dir,
+                coordenadas,
+                peso,
+                prioridad
+        );
+    }
+
 }

@@ -1,6 +1,8 @@
-package edu.msmk.clases;
+package edu.msmk.clases.service;
 
 import edu.msmk.clases.exchange.PeticionCliente;
+import org.springframework.stereotype.Service;
+
 import java.util.*;
 
 /**
@@ -8,6 +10,8 @@ import java.util.*;
  * Usa HashMap con rangos de portales para validación eficiente
  * Complejidad búsqueda: O(1) + O(k) donde k = número de rangos por vía (típicamente 1-3)
  */
+
+@Service
 public class CoberturaServicio {
 
     /**

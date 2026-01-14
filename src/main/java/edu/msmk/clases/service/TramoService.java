@@ -1,6 +1,5 @@
 package edu.msmk.clases.service;
 
-import edu.msmk.clases.CoberturaServicio;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.stereotype.Service;
@@ -35,16 +34,19 @@ public class TramoService {
      * - ESN (53-57): Extremo superior numeración (4 dígitos)
      * - CESN (57-58): Calificador ESN (1 char)
      */
-    public CoberturaServicio leerTramos() throws IOException {
-        CoberturaServicio miCobertura = new CoberturaServicio();
 
-        ClassPathResource resource = new ClassPathResource("TRAM.EMPRESA");
+    /**
+     * Rellena la instancia compartida de CoberturaServicio con los datos del BOE
+     */
+    public void leerTramos(CoberturaServicio coberturaServicio) throws IOException {
+
+        ClassPathResource resource = new ClassPathResource("TRAM.D250630.G250702");
 
         if (!resource.exists()) {
             throw new IOException("El archivo TRAM.D250630.G250702 no existe en los recursos");
         }
 
-        log.info("Iniciando carga del archivo de tramos (estructura BOE)...");
+        log.info("Iniciando carga del archivo de tramos (estructura BOE) en instancia compartida...");
         long inicio = System.currentTimeMillis();
 
         try (BufferedReader reader = new BufferedReader(
@@ -58,29 +60,20 @@ public class TramoService {
             while ((linea = reader.readLine()) != null) {
                 numeroLinea++;
 
-                // La línea debe tener al menos 58 caracteres para contener todos los campos básicos
                 if (linea.trim().isEmpty() || linea.length() < 58) {
                     lineasDescartadas++;
                     continue;
                 }
 
                 try {
-                    // Extraer campos según posiciones BOE
-                    String cpro = extraerCampo(linea, 0, 2);        // Provincia
-                    String cmum = extraerCampo(linea, 2, 5);        // Municipio
-                    String cun = extraerCampo(linea, 13, 20);       // Unidad poblacional
-                    String cvia = extraerCampo(linea, 20, 25);      // Código vía
-                    String ein = extraerCampo(linea, 48, 52);       // Extremo inferior numeración
-                    String esn = extraerCampo(linea, 53, 57);       // Extremo superior numeración
-                    String tinum = extraerCampo(linea, 47, 48);     // Tipo de numeración
+                    String cpro = extraerCampo(linea, 0, 2);
+                    String cmum = extraerCampo(linea, 2, 5);
+                    String cun = extraerCampo(linea, 13, 20);
+                    String cvia = extraerCampo(linea, 20, 25);
+                    String ein = extraerCampo(linea, 48, 52);
+                    String esn = extraerCampo(linea, 53, 57);
+                    String tinum = extraerCampo(linea, 47, 48);
 
-                    // Validar que al menos tengamos provincia
-                    if (cpro.isEmpty()) {
-                        lineasDescartadas++;
-                        continue;
-                    }
-
-                    // Parsear a integers
                     Integer provincia = parseIntSafe(cpro);
                     Integer municipio = parseIntSafe(cmum);
                     Integer unidadPobl = parseIntSafe(cun);
@@ -94,40 +87,26 @@ public class TramoService {
                         continue;
                     }
 
-                    // Añadir al servicio de cobertura
-                    miCobertura.addTramo(provincia, municipio, unidadPobl, via, numInf, numSup,tipoNum);
+                    // Se añade directamente a la instancia inyectada por Spring
+                    coberturaServicio.addTramo(provincia, municipio, unidadPobl, via, numInf, numSup, tipoNum);
                     lineasValidas++;
 
                 } catch (Exception e) {
-                    log.debug("Error parseando línea {}: {}", numeroLinea, e.getMessage());
                     lineasDescartadas++;
                 }
 
-                // Log de progreso cada 100k líneas
                 if (numeroLinea % 100000 == 0) {
-                    log.info("Procesadas {} líneas... (válidas: {}, descartadas: {})",
-                            numeroLinea, lineasValidas, lineasDescartadas);
+                    log.info("Procesadas {} líneas...", numeroLinea);
                 }
-            }
-
-            if (lineasValidas == 0) {
-                throw new IOException("No se pudieron parsear líneas válidas del archivo");
             }
 
             long tiempoTotal = System.currentTimeMillis() - inicio;
 
-            log.info("\n");
-            log.info("CARGA COMPLETADA");
-            log.info("Líneas procesadas: {}", numeroLinea);
-            log.info("Líneas válidas: {} ({:.2f}%)", lineasValidas,
-                    (lineasValidas * 100.0 / numeroLinea));
-            log.info("Líneas descartadas: {} ({:.2f}%)", lineasDescartadas,
-                    (lineasDescartadas * 100.0 / numeroLinea));
-            log.info("Provincias cubiertas: {}", miCobertura.numeroProvinciasCubiertas());
-            log.info("Tramos cubiertos: {}", miCobertura.numeroTramosCubiertos());
-            log.info("Tiempo total: {} ms ({} seg)", tiempoTotal, tiempoTotal / 1000.0);
-
-            return miCobertura;
+            log.info("CARGA COMPLETADA EN INSTANCIA GLOBAL");
+            log.info("Líneas válidas: {}", lineasValidas);
+            log.info("Provincias cubiertas: {}", coberturaServicio.numeroProvinciasCubiertas());
+            log.info("Tramos cubiertos: {}", coberturaServicio.numeroTramosCubiertos());
+            log.info("Tiempo total: {} ms", tiempoTotal);
         }
     }
 
@@ -143,7 +122,6 @@ public class TramoService {
 
     /**
      * Parsea un string a Integer de forma segura
-     * Retorna null si el string está vacío o no es numérico
      */
     private Integer parseIntSafe(String valor) {
         if (valor == null || valor.isEmpty()) {
