@@ -3,85 +3,60 @@ package edu.msmk.clases.service;
 import edu.msmk.clases.dto.PedidoRequest;
 import edu.msmk.clases.exchange.PeticionCliente;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
-import java.util.HashMap;
-import java.util.Map;
+import java.util.List;
 
 @Slf4j
 @Service
 public class DireccionParserService {
 
-    private static final Map<String, Integer> PROVINCIAS = new HashMap<>();
-    private static final Map<String, DatosMunicipio> MUNICIPIOS = new HashMap<>();
-
-    static {
-        // IMPORTANTE: Asegúrate de que las provincias estén cargadas
-        PROVINCIAS.put("ALAVA", 1);
-        PROVINCIAS.put("MADRID", 28);
-
-        // MUNICIPIOS
-        MUNICIPIOS.put("01_ALEGRIA-DULANTZI", new DatosMunicipio(1, 1701, 1002));
-        MUNICIPIOS.put("28_MADRID", new DatosMunicipio(79, 7901, 1234));
-    }
+    @Autowired
+    private CoberturaServicio coberturaServicio;
 
     public PeticionCliente parsear(PedidoRequest.DireccionDTO dto) {
-        try {
-            log.info("Iniciando parseo de dirección: {}, {}", dto.getMunicipio(), dto.getProvincia());
+        log.info("🔍 Procesando: {} en {}", dto.getNombreVia(), dto.getMunicipio());
 
-            // 1. Traducir provincia (Ej: "ÁLAVA" -> 1)
-            String provNormalizada = normalizar(dto.getProvincia());
-            Integer cpro = PROVINCIAS.get(provNormalizada);
+        // 1. Obtener Códigos de Provincia y Municipio
+        Integer cpro = coberturaServicio.obtenerCodigoProvincia(dto.getProvincia());
+        String muniNorm = normalizar(dto.getMunicipio());
+        Integer cmum = coberturaServicio.obtenerCodigoMunicipio(cpro, muniNorm);
 
-            if (cpro == null) {
-                log.error("Fallo en Paso 1: Provincia '{}' no encontrada en el mapa. Claves disponibles: {}",
-                        provNormalizada, PROVINCIAS.keySet());
-                return null;
-            }
-
-            // 2. Buscar códigos por nombre de municipio
-            String muniNormalizado = normalizar(dto.getMunicipio());
-            String claveBusqueda = String.format("%02d_%s", cpro, muniNormalizado);
-
-            log.info("Paso 2: Buscando municipio con clave generada: '{}'", claveBusqueda);
-
-            DatosMunicipio datos = MUNICIPIOS.get(claveBusqueda);
-
-            if (datos == null) {
-                log.error("Fallo en Paso 2: Clave '{}' no existe en el mapa de MUNICIPIOS. Claves disponibles: {}",
-                        claveBusqueda, MUNICIPIOS.keySet());
-                return null;
-            }
-
-            log.info("Éxito: Municipio encontrado. IDs -> CMUM: {}, CUN: {}, CVIA: {}",
-                    datos.codigoMunicipio, datos.unidadPoblacional, datos.codigoViaDefecto);
-
-            // 3. Crear PeticionCliente
-            int numeroPortal = parsearNumero(dto.getNumero());
-
-            PeticionCliente peticion = new PeticionCliente(
-                    cpro,                       // 1 -> Se convertirá en "01"
-                    datos.codigoMunicipio,     // 1 -> Se convertirá en "001"
-                    datos.unidadPoblacional,   // 1701 -> Se convertirá en "0001701"
-                    datos.codigoViaDefecto,    // 1002 -> Se convertirá en "01002"
-                    numeroPortal               // 8
-            );
-
-            // LOG CRÍTICO: Mira qué clave está generando el objeto antes de enviarlo a cobertura
-            log.info("Clave técnica generada por PeticionCliente: '{}'", peticion.getClave());
-
-            return peticion;
-
-        } catch (Exception e) {
-            log.error("Error inesperado en DireccionParserService: {}", e.getMessage(), e);
+        if (cpro == null || cmum == null) {
+            log.error("❌ No se encontró Provincia ({}) o Municipio ({})", cpro, cmum);
             return null;
         }
-    }
+
+        // 2. Búsqueda de Calle
+        String calleUsuario = normalizar(dto.getNombreVia());
+        Integer cvia = coberturaServicio.obtenerCodigoVia(cpro, cmum, calleUsuario);
+
+        // 3. Reintento con formato BOE (por si es "DE LAS FLORES" -> "FLORES (DE LAS)")
+        if (cvia == null) {
+            String formatoBoe = intentarFormatoBOE(calleUsuario);
+            log.info("🔄 Reintentando con formato BOE: {}", formatoBoe);
+            cvia = coberturaServicio.obtenerCodigoVia(cpro, cmum, formatoBoe);
+        }
+
+        if (cvia == null) {
+            log.error("❌ Calle no encontrada: {} en municipio {}", calleUsuario, cmum);
+            List<String> viasDisponibles = coberturaServicio.listarVias(cpro, cmum);
+            log.info("💡 Sugerencias para el municipio {}: {}", cmum, viasDisponibles);
+            return null;
+        }
+
+        log.info("✅ Match encontrado: CPRO={}, CMUM={}, CVIA={}", cpro, cmum, cvia);
+        return new PeticionCliente(cpro, cmum, 0, cvia, parsearNumero(dto.getNumero()));
+    } // <-- Aquí se cierra el método parsear correctamente
 
     private int parsearNumero(String numero) {
+        if (numero == null) return 1;
         try {
             return Integer.parseInt(numero.replaceAll("[^0-9]", ""));
-        } catch (Exception e) { return 1; }
+        } catch (Exception e) {
+            return 1;
+        }
     }
 
     private String normalizar(String texto) {
@@ -93,15 +68,31 @@ public class DireccionParserService {
                 .trim();
     }
 
-    private static class DatosMunicipio {
-        int codigoMunicipio;
-        int unidadPoblacional;
-        int codigoViaDefecto;
+    private String intentarFormatoBOE(String nombre) {
+        if (nombre == null || !nombre.contains(" ")) return nombre;
 
-        DatosMunicipio(int codigoMunicipio, int unidadPoblacional, int codigoViaDefecto) {
-            this.codigoMunicipio = codigoMunicipio;
-            this.unidadPoblacional = unidadPoblacional;
-            this.codigoViaDefecto = codigoViaDefecto;
+        String[] partes = nombre.split(" ");
+        if (partes.length >= 2 && (partes[0].equals("DE") || partes[0].equals("LA") ||
+                partes[0].equals("EL") || partes[0].equals("LAS") || partes[0].equals("LOS"))) {
+
+            StringBuilder nombrePrincipal = new StringBuilder();
+            StringBuilder conectores = new StringBuilder();
+
+            int puntoCorte = (partes.length > 2 && (partes[1].equals("LA") || partes[1].equals("LAS") ||
+                    partes[1].equals("EL") || partes[1].equals("LOS"))) ? 2 : 1;
+
+            conectores.append("(");
+            for (int i = 0; i < puntoCorte; i++) {
+                conectores.append(partes[i]).append(i == puntoCorte - 1 ? "" : " ");
+            }
+            conectores.append(")");
+
+            for (int i = puntoCorte; i < partes.length; i++) {
+                nombrePrincipal.append(partes[i]).append(i == partes.length - 1 ? "" : " ");
+            }
+
+            return (nombrePrincipal.toString() + " " + conectores.toString()).trim();
         }
+        return nombre;
     }
-}
+} // <-- Aquí se cierra la clase

@@ -6,10 +6,11 @@ import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 
 import java.util.*;
+import java.util.stream.Collectors;
 
 /**
- * Representa un grafo de puntos de entrega con matriz de distancias
- * Estructura: Grafo completo ponderado (todos los nodos conectados)
+ * Representa un grafo de puntos de entrega con matriz de distancias precalculada.
+ * Utiliza la fórmula Haversine para considerar la curvatura terrestre.
  */
 @Slf4j
 @Getter
@@ -20,134 +21,126 @@ public class GrafoEntregas {
     private final double[][] matrizDistancias;
     private final int numNodos;
 
-    /**
-     * Constructor del grafo
-     * @param almacen Punto de inicio/fin (almacén)
-     * @param paquetes Lista de paquetes a entregar
-     */
     public GrafoEntregas(Punto almacen, List<Paquete> paquetes) {
+        if (almacen == null) {
+            throw new IllegalArgumentException("El almacén de origen no puede ser nulo.");
+        }
+
         this.almacen = almacen;
 
-        // 1. Filtramos la lista para eliminar cualquier elemento null
-        // que haya podido llegar por error de la API o la Demo
-        this.paquetes = new ArrayList<>();
-        if (paquetes != null) {
-            for (Paquete p : paquetes) {
-                if (p != null) { // <--- VALIDACIÓN CRUCIAL
-                    this.paquetes.add(p);
-                }
-            }
-        }
+        // 1. Filtrado moderno (Java 8+) para eliminar nulos y paquetes sin coordenadas
+        this.paquetes = (paquetes == null) ? new ArrayList<>() :
+                paquetes.stream()
+                        .filter(p -> p != null && p.getCoordenadas() != null)
+                        .collect(Collectors.toList());
 
-        // 2. Validar que todos los paquetes filtrados tengan coordenadas
-        for (Paquete p : this.paquetes) {
-            if (p.getCoordenadas() == null) {
-                throw new IllegalArgumentException(
-                        "Paquete " + p.getId() + " no tiene coordenadas asignadas"
-                );
-            }
-        }
-
-        // 3. El grafo tiene N+1 nodos: almacén + N paquetes válidos
+        // 2. Definición del tamaño del grafo (N+1: Almacén + Paquetes)
         this.numNodos = this.paquetes.size() + 1;
         this.matrizDistancias = new double[numNodos][numNodos];
 
-        calcularDistancias();
+        // 3. Solo calculamos si hay nodos que procesar
+        if (numNodos > 1) {
+            calcularDistancias();
+        } else {
+            log.warn("Grafo creado sin paquetes válidos. Solo se dispone del nodo Almacén.");
+        }
     }
 
     /**
-     * Calcula todas las distancias entre todos los puntos (O(n²))
-     * Índice 0 = Almacén
-     * Índices 1..N = Paquetes
+     * Calcula la matriz de adyacencia completa.
+     * Complejidad O(n²) pero necesaria para algoritmos de optimización de rutas (TSP).
      */
     private void calcularDistancias() {
-        log.info("Calculando matriz de distancias para {} nodos...", numNodos);
         long inicio = System.currentTimeMillis();
 
-        // Distancias del almacén a cada paquete
+        // Distancias Almacén <-> Paquetes
         for (int i = 0; i < paquetes.size(); i++) {
-            double distancia = almacen.distanciaHaversine(paquetes.get(i).getCoordenadas());
-            matrizDistancias[0][i + 1] = distancia;
-            matrizDistancias[i + 1][0] = distancia;
+            double dist = redondear(almacen.distanciaHaversine(paquetes.get(i).getCoordenadas()));
+            matrizDistancias[0][i + 1] = dist;
+            matrizDistancias[i + 1][0] = dist;
         }
 
-        // Distancias entre cada par de paquetes
+        // Distancias Paquetes <-> Paquetes
         for (int i = 0; i < paquetes.size(); i++) {
             for (int j = i + 1; j < paquetes.size(); j++) {
-                double distancia = paquetes.get(i).getCoordenadas()
-                        .distanciaHaversine(paquetes.get(j).getCoordenadas());
+                double dist = redondear(paquetes.get(i).getCoordenadas()
+                        .distanciaHaversine(paquetes.get(j).getCoordenadas()));
 
-                matrizDistancias[i + 1][j + 1] = distancia;
-                matrizDistancias[j + 1][i + 1] = distancia;
+                matrizDistancias[i + 1][j + 1] = dist;
+                matrizDistancias[j + 1][i + 1] = dist;
             }
         }
 
-        long tiempo = System.currentTimeMillis() - inicio;
-        log.info("Matriz de distancias calculada en {} ms", tiempo);
+        log.info("Matriz de {}x{} calculada en {} ms", numNodos, numNodos, System.currentTimeMillis() - inicio);
     }
 
-    /**
-     * Obtiene la distancia entre dos nodos
-     * @param i Índice nodo origen (0=almacén, 1..N=paquetes)
-     * @param j Índice nodo destino
-     * @return Distancia en kilómetros
-     */
+    private double redondear(double valor) {
+        // Redondeo a 3 decimales (precisión de 1 metro aprox)
+        return Math.round(valor * 1000.0) / 1000.0;
+    }
+
     public double getDistancia(int i, int j) {
-        return matrizDistancias[i][j];
+        try {
+            return matrizDistancias[i][j];
+        } catch (ArrayIndexOutOfBoundsException e) {
+            log.error("Error al acceder a la matriz: índice [{}][{}] fuera de rango.", i, j);
+            return 0.0;
+        }
     }
 
-    /**
-     * Obtiene el paquete en el índice dado
-     * @param indice Índice del paquete (1..N)
-     * @return Paquete
-     */
     public Paquete getPaquete(int indice) {
-        if (indice == 0) {
-            throw new IllegalArgumentException("Índice 0 es el almacén, no un paquete");
+        if (indice <= 0 || indice > paquetes.size()) {
+            return null; // Evitamos la excepción para que el optimizador sea más fluido
         }
         return paquetes.get(indice - 1);
     }
 
     /**
-     * Calcula la distancia total de una ruta
-     * @param ruta Lista de índices de nodos (debe empezar y terminar en 0)
-     * @return Distancia total en kilómetros
+     * Suma las aristas de una secuencia de nodos.
      */
     public double calcularDistanciaTotal(List<Integer> ruta) {
-        double distanciaTotal = 0.0;
+        if (ruta == null || ruta.size() < 2) return 0.0;
 
+        double suma = 0.0;
         for (int i = 0; i < ruta.size() - 1; i++) {
-            distanciaTotal += getDistancia(ruta.get(i), ruta.get(i + 1));
+            suma += getDistancia(ruta.get(i), ruta.get(i + 1));
+        }
+        return redondear(suma);
+    }
+
+
+    public Map<String, Double> getMetricasGrafo() {
+        if (numNodos <= 1) return Map.of("distanciaMedia", 0.0, "distanciaMaxima", 0.0);
+
+        double suma = 0;
+        int cont = 0;
+        // Distancias desde el almacén (índice 0) a todos los paquetes
+        for (int i = 1; i < numNodos; i++) {
+            suma += matrizDistancias[0][i];
+            cont++;
         }
 
-        return distanciaTotal;
+        return Map.of(
+                "distanciaMedia", redondear(suma / cont),
+                "distanciaMaxima", redondear(Arrays.stream(matrizDistancias[0]).max().orElse(0.0))
+        );
     }
 
     /**
-     * Muestra la matriz de distancias (útil para debugging)
+     * Debugging elegante: imprime la matriz formateada en el log
      */
     public void mostrarMatriz() {
-        log.info("\n=== MATRIZ DE DISTANCIAS (km) ===");
+        StringBuilder sb = new StringBuilder("\nMATRIZ DE DISTANCIAS (km)\n     ");
+        for (int i = 0; i < numNodos; i++) sb.append(String.format(" %-6s", i == 0 ? "ALM" : "P" + i));
+        sb.append("\n");
 
-        // Encabezado
-        System.out.print("      ALM");
-        for (int i = 0; i < paquetes.size(); i++) {
-            System.out.printf("  P%02d", i + 1);
-        }
-        System.out.println();
-
-        // Filas
         for (int i = 0; i < numNodos; i++) {
-            if (i == 0) {
-                System.out.print("ALM ");
-            } else {
-                System.out.printf("P%02d ", i);
-            }
-
+            sb.append(String.format("%-4s ", i == 0 ? "ALM" : "P" + i));
             for (int j = 0; j < numNodos; j++) {
-                System.out.printf("%5.1f", matrizDistancias[i][j]);
+                sb.append(String.format("[%5.2f] ", matrizDistancias[i][j]));
             }
-            System.out.println();
+            sb.append("\n");
         }
+        log.info(sb.toString());
     }
 }

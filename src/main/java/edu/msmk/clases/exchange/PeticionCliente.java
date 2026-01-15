@@ -1,41 +1,29 @@
 package edu.msmk.clases.exchange;
 
+import lombok.Getter;
+import lombok.Setter;
+
 /**
  * Representa una petición de un cliente solicitando validar una dirección COMPLETA
- * TODOS los campos son OBLIGATORIOS para entregas de paquetería
  */
+@Getter
+@Setter
 public class PeticionCliente {
-    private Integer provincia;           // CPRO: Código provincia (obligatorio)
-    private Integer municipio;           // CMUM: Código municipio (obligatorio)
-    private Integer unidadPoblacional;   // CUN: Código unidad poblacional (obligatorio)
-    private Integer via;                 // CVIA: Código vía (obligatorio)
-    private Integer numero;              // Número del portal (obligatorio)
+    private Integer provincia;
+    private Integer municipio;
+    private String nombreMunicipio;
+    private Integer unidadPoblacional;
+    private Integer via;
+    private Integer numero;
+    private String codigoPostalOficial;
 
-    // Constructor vacío (necesario para Spring)
     public PeticionCliente() {
     }
 
-    /**
-     * Constructor con validación de campos obligatorios
-     * @throws IllegalArgumentException si algún campo es null
-     */
     public PeticionCliente(Integer provincia, Integer municipio, Integer unidadPoblacional,
                            Integer via, Integer numero) {
-        // Validar que TODOS los campos estén presentes
-        if (provincia == null) {
-            throw new IllegalArgumentException("El código de provincia es obligatorio");
-        }
-        if (municipio == null) {
-            throw new IllegalArgumentException("El código de municipio es obligatorio");
-        }
-        if (unidadPoblacional == null) {
-            throw new IllegalArgumentException("El código de unidad poblacional es obligatorio");
-        }
-        if (via == null) {
-            throw new IllegalArgumentException("El código de vía es obligatorio");
-        }
-        if (numero == null) {
-            throw new IllegalArgumentException("El número de portal es obligatorio");
+        if (provincia == null || municipio == null || unidadPoblacional == null || via == null || numero == null) {
+            throw new IllegalArgumentException("Todos los campos geográficos son obligatorios");
         }
 
         this.provincia = provincia;
@@ -45,83 +33,28 @@ public class PeticionCliente {
         this.numero = numero;
     }
 
-    /**
-     * Valida que la petición esté completa
-     * @return true si todos los campos están presentes
-     */
+    // Constructor extendido para incluir el CP oficial tras validación
+    public PeticionCliente(Integer provincia, Integer municipio, Integer unidadPoblacional,
+                           Integer via, Integer numero, String codigoPostalOficial) {
+        this(provincia, municipio, unidadPoblacional, via, numero);
+        this.codigoPostalOficial = codigoPostalOficial;
+    }
+
     public boolean esValida() {
-        return provincia != null
-                && municipio != null
-                && unidadPoblacional != null
-                && via != null
-                && numero != null;
+        return provincia != null && municipio != null && unidadPoblacional != null
+                && via != null && numero != null;
     }
 
-    // Getters
-    public Integer getProvincia() {
-        return provincia;
-    }
-
-    public Integer getMunicipio() {
-        return municipio;
-    }
-
-    public Integer getUnidadPoblacional() {
-        return unidadPoblacional;
-    }
-
-    public Integer getVia() {
-        return via;
-    }
-
-    public Integer getNumero() {
-        return numero;
-    }
-
-    // Setters (necesarios para Spring)
-    public void setProvincia(Integer provincia) {
-        this.provincia = provincia;
-    }
-
-    public void setMunicipio(Integer municipio) {
-        this.municipio = municipio;
-    }
-
-    public void setUnidadPoblacional(Integer unidadPoblacional) {
-        this.unidadPoblacional = unidadPoblacional;
-    }
-
-    public void setVia(Integer via) {
-        this.via = via;
-    }
-
-    public void setNumero(Integer numero) {
-        this.numero = numero;
-    }
-
-    /**
-     * Genera una clave única para buscar en el HashSet
-     * Formato: "PROV_MUN_CUN_VIA"
-     * El número no se incluye en la clave porque representa un rango
-     */
     public String getClave() {
-        return String.format("%02d_%03d_%07d_%05d",
-                provincia != null ? provincia : 0,
-                municipio != null ? municipio : 0,
-                unidadPoblacional != null ? unidadPoblacional : 0,
-                via != null ? via : 0);
-    }
-
-    /**
-     * Genera la dirección legible
-     */
-    public String getDireccionLegible() {
-        return String.format("Provincia=%02d, Municipio=%03d, UnidadPobl=%07d, Via=%05d, Num=%d",
-                provincia, municipio, unidadPoblacional, via, numero);
+        // Exactamente igual que en CoberturaServicio
+        return this.provincia + "_" + this.municipio + "_" +
+                (this.unidadPoblacional != null ? this.unidadPoblacional : 0) + "_" +
+                (this.via != null ? this.via : 0);
     }
 
     @Override
     public String toString() {
-        return String.format("PeticionCliente[%s]", getDireccionLegible());
+        return String.format("PeticionCliente[Prov=%02d, Mun=%03d, Via=%05d, Num=%d, CP_Oficial=%s]",
+                provincia, municipio, via, numero, codigoPostalOficial);
     }
 }

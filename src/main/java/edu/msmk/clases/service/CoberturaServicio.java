@@ -1,248 +1,236 @@
 package edu.msmk.clases.service;
 
 import edu.msmk.clases.exchange.PeticionCliente;
+import lombok.Getter;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.util.*;
-
-/**
- * Servicio de validación de cobertura para entregas de paquetería
- * Usa HashMap con rangos de portales para validación eficiente
- * Complejidad búsqueda: O(1) + O(k) donde k = número de rangos por vía (típicamente 1-3)
- */
+import java.util.concurrent.ConcurrentHashMap; // IMPORTANTE
 
 @Service
+@Slf4j
 public class CoberturaServicio {
 
-    /**
-     * Clase interna que representa un rango de portales válidos en una vía
-     */
-    private static class RangoPortal {
-        private final int extremoInferior;  // EIN
-        private final int extremoSuperior;  // ESN
-        private final int tipoNumeracion;   // TINUM: 1=impares, 2=pares, 0=todos
+    @Value("#{${config.provincias}}")
+    private Map<Integer, String> maestroProvincias;
 
-        public RangoPortal(int extremoInferior, int extremoSuperior, int tipoNumeracion) {
-            this.extremoInferior = extremoInferior;
-            this.extremoSuperior = extremoSuperior;
-            this.tipoNumeracion = tipoNumeracion;
-        }
+    // CAMBIO: Todos los mapas ahora son ConcurrentHashMap para soportar carga en paralelo
+    private final Map<String, Integer> mapaProvincias = new ConcurrentHashMap<>(100);
+    private final Map<String, Integer> mapaNombresAMunicipios = new ConcurrentHashMap<>(20000);
+    private final Map<String, Integer> buscadorVias = new ConcurrentHashMap<>(200000);
+    private final Map<String, List<RangoPortal>> tramosConRangos = new ConcurrentHashMap<>(2000000);
 
-        /**
-         * Verifica si un número de portal está dentro de este rango
-         * Complejidad: O(1)
-         */
-        public boolean contieneNumero(int numero) {
-            // Verificar que esté dentro del rango
-            if (numero < extremoInferior || numero > extremoSuperior) {
-                return false;
-            }
+    public void registrarTodo(int cpro, String nomProv, int cmum, String nomMun,
+                              String nomVia, int cvia, int cpun,
+                              int numInf, int numSup, int tipoNum, String cp) {
 
-            // Verificar paridad según tipo de numeración
-            switch (tipoNumeracion) {
-                case 1: // Solo impares
-                    return numero % 2 != 0;
-                case 2: // Solo pares
-                    return numero % 2 == 0;
-                case 0: // Ambos (sin restricción)
-                    return true;
-                default:
-                    return false;
-            }
-        }
+        String nombreProvReal = (nomProv != null && !nomProv.trim().isEmpty())
+                ? nomProv.toUpperCase().trim()
+                : maestroProvincias.getOrDefault(cpro, "PROVINCIA " + cpro);
 
-        @Override
-        public String toString() {
-            String tipo = tipoNumeracion == 1 ? "impares" :
-                    tipoNumeracion == 2 ? "pares" : "todos";
-            return String.format("[%d-%d %s]", extremoInferior, extremoSuperior, tipo);
-        }
+        mapaProvincias.put(nombreProvReal, cpro);
+        registrarNombreMunicipio(cpro, nomMun, cmum);
+        registrarVia(cpro, cmum, nomVia, cvia);
+        addTramo(cpro, cmum, cpun, cvia, numInf, numSup, tipoNum, cp);
     }
 
-    // Clave: "PROV_MUN_CUN_VIA" -> Lista de rangos de portales
-    private HashMap<String, List<RangoPortal>> tramosConRangos;
-
-    public CoberturaServicio() {
-        this.tramosConRangos = new HashMap<>();
-    }
-
-    /**
-     * Añade un tramo completo con sus rangos de numeración según estructura INE
-     * Complejidad: O(1) amortizado
-     *
-     * @param provincia Código provincia (CPRO)
-     * @param municipio Código municipio (CMUM)
-     * @param unidadPobl Código unidad poblacional (CUN)
-     * @param via Código vía (CVIA)
-     * @param numInf Extremo inferior numeración (EIN)
-     * @param numSup Extremo superior numeración (ESN)
-     * @param tipoNum Tipo de numeración (TINUM): 1=impares, 2=pares, 0=todos
-     */
     public void addTramo(Integer provincia, Integer municipio, Integer unidadPobl,
-                         Integer via, Integer numInf, Integer numSup, Integer tipoNum) {
-        // Validar que tengamos todos los datos obligatorios
-        if (provincia == null || municipio == null || via == null) {
-            return;
-        }
+                         Integer via, Integer numInf, Integer numSup, Integer tipoNum, String cp) {
 
-        // Si no hay rangos de numeración válidos, no podemos validar portales
-        if (numInf == null || numSup == null || tipoNum == null) {
-            return;
-        }
+        String clave = provincia + "_" + municipio + "_" + (unidadPobl != null ? unidadPobl : 0) + "_" + (via != null ? via : 0);
+        RangoPortal nuevoRango = new RangoPortal(numInf, numSup, tipoNum, cp);
 
-        // Validar que el rango sea lógico
-        if (numInf > numSup || numInf < 0) {
-            return;
-        }
-
-        // Crear clave única: PROV_MUN_CUN_VIA
-        String clave = String.format("%02d_%03d_%07d_%05d",
-                provincia,
-                municipio,
-                unidadPobl != null ? unidadPobl : 0,
-                via);
-
-        // Crear el rango de portales
-        RangoPortal rango = new RangoPortal(numInf, numSup, tipoNum);
-
-        // Añadir a la lista de rangos de esta vía (puede haber múltiples rangos)
-        tramosConRangos.computeIfAbsent(clave, k -> new ArrayList<>()).add(rango);
+        // OPTIMIZACIÓN: computeIfAbsent en ConcurrentHashMap es atómico.
+        // Usamos CopyOnWriteArrayList o sincronizamos la lista para evitar errores en la lista misma.
+        tramosConRangos.computeIfAbsent(clave, k -> Collections.synchronizedList(new ArrayList<>(2)))
+                .add(nuevoRango);
     }
 
-    /**
-     * Número de vías únicas cubiertas
-     */
-    public int numeroTramosCubiertos() {
-        return this.tramosConRangos.size();
-    }
+    public void registrarVia(int cpro, int cmum, String nomVia, int cvia) {
+        if (nomVia == null || nomVia.isEmpty()) return;
 
-    /**
-     * Obtiene el número de provincias únicas cubiertas
-     */
-    public int numeroProvinciasCubiertas() {
-        Set<Integer> provinciasUnicas = new HashSet<>();
+        // 1. Limpieza radical:
+        // Quitamos los números (el cvia que se cuela) y espacios sobrantes
+        String nombreLimpio = nomVia.replaceAll("[0-9]", "") // Quita los números (00383...)
+                .replaceAll("\\s+", " ") // Convierte múltiples espacios en uno solo
+                .trim();
 
-        for (String tramo : tramosConRangos.keySet()) {
-            String provinciaStr = tramo.substring(0, 2);
-            provinciasUnicas.add(Integer.parseInt(provinciaStr));
+        // 2. Si el nombre empieza por el nombre de una provincia o río (como EBRO),
+        // es que el substring está mal, pero con esta limpieza el 'contains' funcionará.
+
+        String claveVia = cpro + "_" + cmum + "_" + nombreLimpio;
+
+        if (cmum == 115) {
+            log.info("Clave GENERADA Y LIMPIA: {}", claveVia);
         }
 
-        return provinciasUnicas.size();
+        buscadorVias.put(claveVia, cvia);
     }
 
-    /**
-     * Verifica si damos servicio a una dirección COMPLETA
-     * Valida que el número de portal esté dentro de los rangos válidos de la vía
-     * Complejidad: O(1) búsqueda HashMap + O(k) iteración rangos (k típicamente 1-3)
-     *
-     * @param peticion Petición con TODOS los campos obligatorios
-     * @return true si cubrimos esa dirección exacta con ese número de portal
-     * @throws IllegalArgumentException si la petición no está completa
-     */
+    private String normalizarNombreVia(String nombre) {
+        String nom = nombre.toUpperCase().trim();
+        if (nom.contains("(") && nom.contains(")")) {
+            try {
+                int open = nom.indexOf("(");
+                int close = nom.indexOf(")");
+                String dentro = nom.substring(open + 1, close);
+                String fuera = nom.substring(0, open).trim();
+                return (dentro + " " + fuera).trim();
+            } catch (Exception e) { return nom; }
+        }
+        return nom;
+    }
+
     public boolean damosServicio(PeticionCliente peticion) {
-        if (peticion == null) {
-            throw new IllegalArgumentException("La petición no puede ser null");
-        }
-
-        // Verificar que la petición esté completa
-        if (!peticion.esValida()) {
-            throw new IllegalArgumentException(
-                    "Para validar entregas, la dirección debe estar COMPLETA. " +
-                            "Faltan campos: " + obtenerCamposFaltantes(peticion)
-            );
-        }
-
-        // Buscar la vía en el HashMap
+        if (peticion == null) return false;
         String clave = peticion.getClave();
         List<RangoPortal> rangos = tramosConRangos.get(clave);
 
-        // Si la vía no existe en nuestra cobertura, no damos servicio
-        if (rangos == null || rangos.isEmpty()) {
-            return false;
-        }
-
-        // Verificar si el número de portal está en alguno de los rangos de la vía
-        int numeroPortal = peticion.getNumero();
-        for (RangoPortal rango : rangos) {
-            if (rango.contieneNumero(numeroPortal)) {
-                return true;
+        if (rangos != null) {
+            // Sincronizamos la lectura para evitar colisiones si se consulta mientras se carga
+            synchronized (rangos) {
+                int numeroPortal = peticion.getNumero();
+                for (RangoPortal rango : rangos) {
+                    if (rango.contieneNumero(numeroPortal)) {
+                        peticion.setCodigoPostalOficial(rango.getCodigoPostal());
+                        return true;
+                    }
+                }
             }
         }
-
-        // El número de portal no está en ningún rango válido
         return false;
     }
 
-    /**
-     * Verifica si existe una vía (sin validar número de portal)
-     * @param clave Clave en formato "PROV_MUN_CUN_VIA"
-     * @return true si la vía existe en nuestra cobertura
-     */
-    public boolean existeTramo(String clave) {
-        return tramosConRangos.containsKey(clave);
-    }
+    // Busca la provincia aunque el usuario escriba "Alava" o "01"
+    public Integer obtenerCodigoProvincia(String entrada) {
+        if (entrada == null) return null;
+        String busqueda = normalizar(entrada);
 
-    /**
-     * Obtiene todas las claves de vías cubiertas
-     */
-    public Set<String> getTramosCompletos() {
-        return new HashSet<>(tramosConRangos.keySet());
-    }
-
-    /**
-     * Obtiene el conjunto de provincias únicas cubiertas
-     */
-    public Set<Integer> getProvinciasCubiertas() {
-        Set<Integer> provinciasUnicas = new HashSet<>();
-
-        for (String tramo : tramosConRangos.keySet()) {
-            String provinciaStr = tramo.substring(0, 2);
-            provinciasUnicas.add(Integer.parseInt(provinciaStr));
+        // 1. ¿Es un número? (El usuario mandó "01")
+        try {
+            return Integer.parseInt(busqueda);
+        } catch (NumberFormatException e) {
+            // 2. Si es texto, buscamos en el mapa de propiedades
+            return maestroProvincias.entrySet().stream()
+                    .filter(entry -> normalizar(entry.getValue()).contains(busqueda))
+                    .map(Map.Entry::getKey)
+                    .findFirst()
+                    .orElse(null);
         }
-
-        return provinciasUnicas;
     }
 
-    /**
-     * Limpia todos los datos
-     */
+    // Busca el municipio ignorando si el usuario puso solo una parte del nombre
+    public Integer obtenerCodigoMunicipio(int cpro, String nombreBusqueda) {
+        String busqueda = normalizar(nombreBusqueda);
+        String prefijo = String.format("%02d", cpro); // Convertir 1 en "01"
+
+        return mapaNombresAMunicipios.entrySet().stream()
+                .filter(e -> e.getKey().startsWith(prefijo)) // Que sea de esa provincia
+                .filter(e -> normalizar(e.getKey()).contains(busqueda)) // Que contenga el nombre
+                .map(Map.Entry::getValue)
+                .findFirst()
+                .orElse(null);
+    }
+
+    public Integer obtenerCodigoVia(int cpro, int cmum, String nombreBuscado) {
+        if (nombreBuscado == null) return null;
+
+        String busqueda = normalizar(nombreBuscado);
+        String prefijo = cpro + "_" + cmum + "_";
+
+        return buscadorVias.entrySet().stream()
+                .filter(e -> e.getKey().startsWith(prefijo))
+                .filter(e -> {
+                    String nombreOficial = e.getKey().replace(prefijo, "");
+                    // Esto permite que "EBRO ALBERT CAMUS" sea encontrado buscando "ALBERT CAMUS"
+                    return nombreOficial.contains(busqueda) || busqueda.contains(nombreOficial);
+                })
+                .map(Map.Entry::getValue)
+                .findFirst()
+                .orElse(null);
+    }
+    // Método clave para que el match funcione sin importar artículos o tipos de vía
+    private String limpiarParaMatch(String texto) {
+        return texto.toUpperCase()
+                .replaceAll("^(CALLE|AVENIDA|PLAZA|PASEO|AV\\.|C/|CL)\\s+", "")
+                .replaceAll("\\(.*?\\)", "") // Quita lo que hay entre paréntesis (DE LAS)
+                .replaceAll("\\s+(DE|LA|EL|LAS|LOS)\\s+", " ")
+                .replaceAll("[^A-Z0-9]", "") // Deja solo letras y números
+                .trim();
+    }
+
+
+    public void registrarNombreMunicipio(int cpro, String nombre, int cmum) {
+        if (nombre == null || nombre.isEmpty()) return;
+        mapaNombresAMunicipios.put(cpro + "_" + nombre.toUpperCase().trim(), cmum);
+    }
+
+    public void registrarProvincia(int cpro, String nombreProv) {
+        if (nombreProv == null || nombreProv.isEmpty()) {
+            nombreProv = maestroProvincias.getOrDefault(cpro, "PROVINCIA " + cpro);
+        }
+        mapaProvincias.put(nombreProv.toUpperCase().trim(), cpro);
+    }
+
     public void limpiar() {
         tramosConRangos.clear();
+        mapaNombresAMunicipios.clear();
+        mapaProvincias.clear();
+        buscadorVias.clear();
+        log.info("Memoria de Cobertura liberada.");
     }
 
-    /**
-     * Devuelve una lista de campos faltantes en la petición
-     */
-    private String obtenerCamposFaltantes(PeticionCliente peticion) {
-        StringBuilder faltantes = new StringBuilder();
-
-        if (peticion.getProvincia() == null) {
-            faltantes.append("provincia, ");
-        }
-        if (peticion.getMunicipio() == null) {
-            faltantes.append("municipio, ");
-        }
-        if (peticion.getUnidadPoblacional() == null) {
-            faltantes.append("unidadPoblacional, ");
-        }
-        if (peticion.getVia() == null) {
-            faltantes.append("via, ");
-        }
-        if (peticion.getNumero() == null) {
-            faltantes.append("numero");
-        }
-
-        String resultado = faltantes.toString();
-        if (resultado.endsWith(", ")) {
-            resultado = resultado.substring(0, resultado.length() - 2);
-        }
-
-        return resultado;
+    public int numeroProvinciasCubiertas() {
+        // Usamos stream para contar de forma segura
+        return (int) tramosConRangos.keySet().stream()
+                .map(clave -> clave.split("_")[0])
+                .distinct()
+                .count();
     }
 
-    @Override
-    public String toString() {
-        return String.format("CoberturaServicio[vías=%d, provincias=%d]",
-                tramosConRangos.size(), numeroProvinciasCubiertas());
+    private static class RangoPortal {
+        private final int extremoInferior;
+        private final int extremoSuperior;
+        private final int tipoNumeracion;
+        @Getter private final String codigoPostal;
+
+        public RangoPortal(int extremoInferior, int extremoSuperior, int tipoNumeracion, String codigoPostal) {
+            this.extremoInferior = extremoInferior;
+            this.extremoSuperior = extremoSuperior;
+            this.tipoNumeracion = tipoNumeracion;
+            this.codigoPostal = codigoPostal;
+        }
+
+        public boolean contieneNumero(int numero) {
+            if (numero < extremoInferior || numero > extremoSuperior) return false;
+            if (tipoNumeracion == 1) return numero % 2 != 0;
+            if (tipoNumeracion == 2) return numero % 2 == 0;
+            return true;
+        }
     }
+
+    private String normalizar(String texto) {
+        if (texto == null) return "";
+        return texto.toUpperCase()
+                .replace("Á", "A").replace("É", "E")
+                .replace("Í", "I").replace("Ó", "O")
+                .replace("Ú", "U").replace("Ñ", "N")
+                .trim();
+    }
+
+    public List<String> listarVias(int cpro, int cmum) {
+        String prefijo = cpro + "_" + cmum + "_";
+        return buscadorVias.keySet().stream()
+                .filter(clave -> clave.startsWith(prefijo))
+                .map(clave -> clave.replace(prefijo, "")) // Quitamos los códigos para ver solo el nombre
+                .sorted()
+                .limit(20) // Limitamos a 20 para no inundar el log
+                .toList();
+    }
+
+
+    public int numeroTramosCubiertos() { return this.tramosConRangos.size(); }
+    public int numeroViasIndexadas() { return this.buscadorVias.size(); }
 }

@@ -9,66 +9,91 @@ import org.springframework.web.client.RestTemplate;
 import org.springframework.web.util.UriComponentsBuilder;
 
 import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 @Slf4j
 @Service
 public class MapboxService {
 
-    // Inyecta el token de application.properties
-    @Value("${mapbox.access_token}")
+    @Value("${mapbox.api.token}")
     private String accessToken;
 
-    // Usamos RestTemplate para hacer las peticiones HTTP
+    @Value("${mapbox.api.geocoding.url}")
+    private String geocodingUrl;
+
+    @Value("${mapbox.api.directions.url}")
+    private String directionsUrl;
+
     private final RestTemplate restTemplate = new RestTemplate();
 
-    private final String GEOCODING_URL = "api.mapbox.com";
-    private final String DIRECTIONS_URL = "api.mapbox.com";
+    // --- NUEVA CACHÉ EN MEMORIA ---
+    // Guardamos la dirección completa como clave y el objeto Punto como valor
+    private final Map<String, Punto> cacheCoordenadas = new ConcurrentHashMap<>();
 
     /**
-     * Obtiene coordenadas reales de Mapbox para una dirección.
+     * Obtiene coordenadas con lógica de caché
      */
-    public Punto obtenerCoordenadas(String direccion) {
-        log.info("Llamando a Mapbox Geocoding para: {}", direccion);
+    public Punto obtenerCoordenadas(String calleConNumero, String cp, String municipio) {
+        String direccionCompleta = String.format("%s, %s, %s", calleConNumero, cp, municipio).toUpperCase();
+
+        // 1. Intentar recuperar de la caché
+        if (cacheCoordenadas.containsKey(direccionCompleta)) {
+            log.info("HIT DE CACHÉ: Recuperando coordenadas para {}", direccionCompleta);
+            return cacheCoordenadas.get(direccionCompleta);
+        }
+
+        log.info("LLAMADA API: Buscando en Mapbox para {}", direccionCompleta);
         try {
-            String url = UriComponentsBuilder.fromHttpUrl(GEOCODING_URL + direccion + ".json")
+            String url = UriComponentsBuilder.fromHttpUrl(geocodingUrl)
+                    .queryParam("q", direccionCompleta)
                     .queryParam("access_token", accessToken)
+                    .queryParam("types", "address")
                     .queryParam("limit", 1)
-                    .queryParam("country", "ES") // Filtra solo por España
+                    .queryParam("country", "ES")
+                    .queryParam("language", "es")
                     .build()
                     .toUriString();
 
             JsonNode response = restTemplate.getForObject(url, JsonNode.class);
 
-            if (response != null && response.has("features") && response.get("features").size() > 0) {
-                JsonNode coordinates = response.get("features").get(0).get("geometry").get("coordinates");
-                double lon = coordinates.get(0).asDouble(); // Mapbox devuelve [lon, lat]
+            if (response != null && response.has("features") && !response.get("features").isEmpty()) {
+                JsonNode feature = response.get("features").get(0);
+                JsonNode coordinates = feature.get("geometry").get("coordinates");
+
+                double lon = coordinates.get(0).asDouble();
                 double lat = coordinates.get(1).asDouble();
-                log.info("Coordenadas reales obtenidas: {}, {}", lat, lon);
-                return new Punto(lat, lon, direccion);
+
+                Punto punto = new Punto(lat, lon, direccionCompleta);
+
+                // 2. Guardar en la caché para la próxima vez
+                cacheCoordenadas.put(direccionCompleta, punto);
+
+                return punto;
             }
         } catch (Exception e) {
             log.error("Error al obtener coordenadas de Mapbox: {}", e.getMessage());
         }
-        // Devuelve null si falla, para que el servicio use la aproximación
         return null;
     }
 
     /**
-     * Obtiene la ruta real de carretera entre puntos en formato GeoJSON.
+     * Obtiene la ruta real (Directions)
      */
-    public String obtenerRutaOptimizadaGeoJson(List<Punto> rutaOptimizada) {
+    public JsonNode obtenerRutaOptimizadaGeoJson(List<Punto> rutaOptimizada) {
+        // Podríamos cachear rutas también, pero como cambian cada vez que
+        // añades un paquete a la furgoneta, es mejor dejarlo dinámico.
         if (rutaOptimizada == null || rutaOptimizada.size() < 2) return null;
-        log.info("Llamando a Mapbox Directions para {} puntos.", rutaOptimizada.size());
 
         try {
-            // Formato de puntos: longitud,latitud;longitud,latitud;...
             StringBuilder puntosStr = new StringBuilder();
             for (Punto p : rutaOptimizada) {
                 puntosStr.append(p.getLongitud()).append(",").append(p.getLatitud()).append(";");
             }
-            puntosStr.deleteCharAt(puntosStr.length() - 1); // Elimina el último ";"
+            puntosStr.deleteCharAt(puntosStr.length() - 1);
 
-            String url = UriComponentsBuilder.fromHttpUrl(DIRECTIONS_URL + puntosStr.toString())
+            String url = UriComponentsBuilder.fromHttpUrl(directionsUrl)
+                    .pathSegment(puntosStr.toString())
                     .queryParam("access_token", accessToken)
                     .queryParam("geometries", "geojson")
                     .queryParam("overview", "full")
@@ -76,14 +101,18 @@ public class MapboxService {
                     .toUriString();
 
             JsonNode response = restTemplate.getForObject(url, JsonNode.class);
-
-            if (response != null && response.has("routes")) {
-                // Devuelve solo la geometría de la primera ruta como String
-                return response.get("routes").get(0).get("geometry").toString();
+            if (response != null && response.has("routes") && !response.get("routes").isEmpty()) {
+                return response.get("routes").get(0).get("geometry");
             }
+
         } catch (Exception e) {
             log.error("Error al obtener ruta de Mapbox: {}", e.getMessage());
         }
         return null;
+    }
+
+    // Método extra para el Dashboard: ver cuántas direcciones tenemos cache Merged
+    public int getTamanoCache() {
+        return cacheCoordenadas.size();
     }
 }

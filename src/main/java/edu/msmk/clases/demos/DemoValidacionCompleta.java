@@ -2,110 +2,68 @@ package edu.msmk.clases.demos;
 
 import edu.msmk.clases.service.CoberturaServicio;
 import edu.msmk.clases.exchange.PeticionCliente;
+import java.lang.reflect.Field;
+import java.util.HashMap;
 
 public class DemoValidacionCompleta {
 
     public static void main(String[] args) {
-        System.out.println("DEMO: Validación de Direcciones COMPLETAS");
-        System.out.println("\n");
+        System.out.println("=== DEMO VALIDACIÓN 2026: CLAVES ANCHO FIJO ===");
 
-        // Cargar tramos
         CoberturaServicio cobertura = new CoberturaServicio();
 
-        System.out.println("CARGANDO TRAMOS DE COBERTURA ");
-        /*cobertura.addTramo(1, 1, 1701, 1001, 1, 27);     // Álava - TORRONDOA
-        cobertura.addTramo(1, 1, 1701, 1002, 1, 50);     // Álava - AÑUA BIDEA
-        cobertura.addTramo(28, 79, 7901, 12345, 1, 100); // Madrid
-        cobertura.addTramo(8, 19, 1901, 54321, 2, 200);  // Barcelona */
+        // Simulación manual de lo que haría Spring con el @Value
+        // solo para que la demo no de NullPointerException
+        inyectarMaestroProvinciasManual(cobertura);
 
-        System.out.println("Tramos cargados: " + cobertura.numeroTramosCubiertos());
-        System.out.println("Provincias cubiertas: " + cobertura.numeroProvinciasCubiertas());
+        System.out.println("\n[1] CARGANDO DATOS...");
 
-        // CASO 1: Petición COMPLETA y CUBIERTA
-        System.out.println("\n\n CASO 1: Petición COMPLETA y CUBIERTA ");
-        try {
-            PeticionCliente p1 = new PeticionCliente(1, 1, 1701, 1001, 15);
-            System.out.println("Petición: " + p1.getDireccionLegible());
+        // CPRO, CMUM, CUN, CVIA, EIN, ESN, TINUM, CP
+        cobertura.addTramo(1, 1, 1701, 1001, 1, 27, 0, "01240");
+        cobertura.addTramo(28, 79, 0, 12345, 1, 100, 0, "28001");
+        cobertura.addTramo(8, 19, 1901, 54321, 2, 200, 2, "08002"); // Solo pares
+
+        System.out.println("Tramos: " + cobertura.numeroTramosCubiertos());
+        System.out.println("Provincias: " + cobertura.numeroProvinciasCubiertas());
+
+        // CASO 1: ÉXITO
+        System.out.println("\nCASO 1: Madrid - Castellana 15");
+        PeticionCliente p1 = new PeticionCliente(28, 79, 0, 12345, 15);
+        if (cobertura.damosServicio(p1)) {
+            System.out.println("OK. CP: " + p1.getCodigoPostalOficial());
             System.out.println("Clave: " + p1.getClave());
+        }
 
-            long inicio = System.nanoTime();
-            boolean resultado = cobertura.damosServicio(p1);
-            long tiempo = System.nanoTime() - inicio;
+        // CASO 2: PARIDAD
+        System.out.println("\nCASO 2: Barcelona - Calle Pares, nº 15 (Impar)");
+        PeticionCliente p2 = new PeticionCliente(8, 19, 1901, 54321, 15);
+        boolean res2 = cobertura.damosServicio(p2);
+        System.out.println(res2 ? "Error" : " Rechazado correctamente (es par)");
 
-            System.out.println("Resultado: " + (resultado ? "CUBIERTA" : "NO CUBIERTA"));
-            System.out.println("Tiempo: " + tiempo + " ns (" +
-                    String.format("%.3f", tiempo/1000.0) + " μs)");
-            System.out.println("¿Podemos entregar?: " + (resultado ? "SÍ" : "NO"));
+        // CASO 3: RENDIMIENTO
+        System.out.println("\nCASO 3: Test de velocidad (1 millón de peticiones)");
+        long inicio = System.currentTimeMillis();
+        for(int i=0; i<1_000_000; i++) {
+            cobertura.damosServicio(p1);
+        }
+        System.out.println("Tiempo: " + (System.currentTimeMillis() - inicio) + "ms");
+    }
+
+    /**
+     * Auxiliar para la demo: Inyecta datos en el campo privado maestroProvincias
+     * ya que en un main() Spring no está activo.
+     */
+    private static void inyectarMaestroProvinciasManual(CoberturaServicio service) {
+        try {
+            Field field = CoberturaServicio.class.getDeclaredField("maestroProvincias");
+            field.setAccessible(true);
+            field.set(service, new HashMap<Integer, String>() {{
+                put(28, "MADRID");
+                put(1, "ALAVA");
+                put(8, "BARCELONA");
+            }});
         } catch (Exception e) {
-            System.out.println("Error: " + e.getMessage());
+            // Si falla no pasa nada, la demo usa addTramo directo
         }
-
-        // CASO 2: Petición COMPLETA pero NO CUBIERTA
-        System.out.println("\n\n CASO 2: Petición COMPLETA pero NO CUBIERTA ");
-        try {
-            PeticionCliente p2 = new PeticionCliente(1, 1, 1701, 9999, 10);
-            System.out.println("Petición: " + p2.getDireccionLegible());
-            System.out.println("Clave: " + p2.getClave());
-
-            long inicio = System.nanoTime();
-            boolean resultado = cobertura.damosServicio(p2);
-            long tiempo = System.nanoTime() - inicio;
-
-            System.out.println(" Resultado: " + (resultado ? "CUBIERTA" : "NO CUBIERTA"));
-            System.out.println(" Tiempo: " + tiempo + " ns (" +
-                    String.format("%.3f", tiempo/1000.0) + " μs)");
-            System.out.println(" ¿Podemos entregar?: " + (resultado ? "SÍ" : "NO"));
-        } catch (Exception e) {
-            System.out.println(" Error: " + e.getMessage());
-        }
-
-        // CASO 3: Petición INCOMPLETA (falta número)
-        System.out.println("\n\n CASO 3: Petición INCOMPLETA (falta número)");
-        try {
-            PeticionCliente p3 = new PeticionCliente(1, 1, 1701, 1001, null);
-            System.out.println("Petición: " + p3.getDireccionLegible());
-
-            boolean resultado = cobertura.damosServicio(p3);
-            System.out.println("Resultado: " + resultado);
-        } catch (IllegalArgumentException e) {
-            System.out.println("ERROR CAPTURADO (esperado): " + e.getMessage());
-        }
-
-        // CASO 4: Petición INCOMPLETA (falta municipio)
-        System.out.println("\n\n CASO 4: Petición INCOMPLETA (solo provincia)");
-        try {
-            // Esto debería lanzar excepción en el constructor
-            PeticionCliente p4 = new PeticionCliente(1, null, null, null, null);
-            System.out.println("Petición: " + p4);
-        } catch (IllegalArgumentException e) {
-            System.out.println("ERROR CAPTURADO en constructor: " + e.getMessage());
-        }
-
-        // CASO 5: Múltiples validaciones (rendimiento)
-        System.out.println("\n\n  CASO 5: Prueba de RENDIMIENTO");
-        PeticionCliente pTest = new PeticionCliente(1, 1, 1701, 1001, 10);
-        int numPruebas = 100000;
-
-        System.out.println("Realizando " + numPruebas + " validaciones...");
-        long inicioTotal = System.nanoTime();
-
-        for (int i = 0; i < numPruebas; i++) {
-            cobertura.damosServicio(pTest);
-        }
-
-        long tiempoTotal = System.nanoTime() - inicioTotal;
-        double promedio = tiempoTotal / (double) numPruebas;
-
-        System.out.println("Tiempo total: " + tiempoTotal / 1_000_000 + " ms");
-        System.out.println("Tiempo promedio: " + String.format("%.2f", promedio) + " ns");
-        System.out.println("Tiempo promedio: " + String.format("%.3f", promedio/1000.0) + " μs");
-        System.out.println("Consultas/segundo: " + String.format("%.0f", 1_000_000_000.0 / promedio));
-
-        System.out.println("\n");
-        System.out.println("CONCLUSIONES");
-        System.out.println("Solo se validan direcciones COMPLETAS (5 campos)");
-        System.out.println("Validación en O(1) usando HashSet");
-        System.out.println("Excepciones claras si faltan campos");
-        System.out.println("Rendimiento: < 1 microsegundo por validación");
     }
 }

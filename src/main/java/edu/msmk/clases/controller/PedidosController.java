@@ -28,15 +28,14 @@ public class PedidosController {
      */
     @PostMapping("/pedidos")
     public ResponseEntity<PedidoResponse> crearPedido(@RequestBody PedidoRequest request) {
-        log.info("Nueva petición de pedido: {}", request.getDestinatario());
+        log.info("Procesando pedido para: {}", request.getDireccion()); // Mejor loguear dirección que destinatario para tracking de rutas
 
         PedidoResponse response = pedidosService.procesarPedido(request);
 
-        if (Boolean.TRUE.equals(response.getCobertura())) {
-            return ResponseEntity.ok(response);
-        } else {
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(response);
-        }
+        // Si hay cobertura, devolvemos 200 OK.
+        // Si NO hay cobertura, devolvemos 200 OK igualmente pero con el flag cobertura:false
+        // ¿Por qué? Porque el sistema funcionó bien, solo que el negocio dice que no llegamos.
+        return ResponseEntity.ok(response);
     }
 
     /**
