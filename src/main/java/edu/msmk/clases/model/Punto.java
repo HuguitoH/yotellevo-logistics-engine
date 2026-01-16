@@ -1,23 +1,11 @@
 package edu.msmk.clases.model;
 
-import lombok.Getter;
-import lombok.ToString;
+import java.util.Objects;
 
 /**
  * Representa un punto geográfico con coordenadas
  */
-@Getter
-@ToString
-public class Punto {
-    private final double latitud;
-    private final double longitud;
-    private final String descripcion;
-
-    public Punto(double latitud, double longitud, String descripcion) {
-        this.latitud = latitud;
-        this.longitud = longitud;
-        this.descripcion = descripcion;
-    }
+public record Punto(double lat, double lon, String descripcion) {
 
     public Punto(double latitud, double longitud) {
         this(latitud, longitud, "");
@@ -34,10 +22,10 @@ public class Punto {
         final double RADIO_TIERRA_KM = 6371.0;
 
         // Convertir grados a radianes
-        double lat1Rad = Math.toRadians(this.latitud);
-        double lat2Rad = Math.toRadians(otro.latitud);
-        double deltaLatRad = Math.toRadians(otro.latitud - this.latitud);
-        double deltaLonRad = Math.toRadians(otro.longitud - this.longitud);
+        double lat1Rad = Math.toRadians(this.lat);
+        double lat2Rad = Math.toRadians(otro.lat);
+        double deltaLatRad = Math.toRadians(otro.lat - this.lat);
+        double deltaLonRad = Math.toRadians(otro.lon - this.lon);
 
         // Fórmula de Haversine
         double a = Math.sin(deltaLatRad / 2) * Math.sin(deltaLatRad / 2) +
@@ -54,12 +42,11 @@ public class Punto {
      * Útil para distancias cortas (<100km)
      */
     public double distanciaEuclidiana(Punto otro) {
-        double deltaLat = otro.latitud - this.latitud;
-        double deltaLon = otro.longitud - this.longitud;
+        double deltaLat = otro.lat - this.lat;
+        double deltaLon = otro.lon - this.lon;
 
         // Aproximación: 1 grado ≈ 111 km
-        double distanciaKm = Math.sqrt(deltaLat * deltaLat + deltaLon * deltaLon) * 111.0;
-        return distanciaKm;
+        return Math.sqrt(deltaLat * deltaLat + deltaLon * deltaLon) * 111.0;
     }
 
     @Override
@@ -67,12 +54,12 @@ public class Punto {
         if (this == o) return true;
         if (o == null || getClass() != o.getClass()) return false;
         Punto punto = (Punto) o;
-        return Double.compare(punto.latitud, latitud) == 0 &&
-                Double.compare(punto.longitud, longitud) == 0;
+        return Double.compare(punto.lat, lat) == 0 &&
+                Double.compare(punto.lon, lon) == 0;
     }
 
     @Override
     public int hashCode() {
-        return java.util.Objects.hash(latitud, longitud);
+        return Objects.hash(lat, lon);
     }
 }

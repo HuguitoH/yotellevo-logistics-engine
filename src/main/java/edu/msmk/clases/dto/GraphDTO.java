@@ -1,20 +1,42 @@
 package edu.msmk.clases.dto;
 
-import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
-import lombok.NoArgsConstructor;
-import java.util.ArrayList;
 import java.util.List;
 
+/**
+ * DTO para representación del grafo de entregas
+ * Compatible con librerías de visualización como D3.js, Cytoscape, etc.
+ */
 @Data
 @Builder
-@AllArgsConstructor
-@NoArgsConstructor
 public class GraphDTO {
-    @Builder.Default
-    private List<NodoDTO> nodes = new ArrayList<>();
 
-    @Builder.Default
-    private List<LinkDTO> links = new ArrayList<>();
+    private List<NodoDTO> nodes;
+    private List<LinkDTO> links;
+    private String mensaje;
+
+    /**
+     * Nodo del grafo (almacén o punto de entrega)
+     */
+    @Data
+    @Builder
+    public static class NodoDTO {
+        private String id;
+        private String tipo;        // "ALMACEN" o "ENTREGA"
+        private Double lat;
+        private Double lon;
+        private String etiqueta;    // Para mostrar en el grafo
+    }
+
+    /**
+     * Enlace entre dos nodos
+     */
+    @Data
+    @Builder
+    public static class LinkDTO {
+        private String source;      // ID del nodo origen
+        private String target;      // ID del nodo destino
+        private Double distancia;   // En kilómetros
+    }
 }

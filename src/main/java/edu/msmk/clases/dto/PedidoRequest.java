@@ -1,21 +1,25 @@
 package edu.msmk.clases.dto;
 
 import lombok.Data;
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotNull;
 
 @Data
 public class PedidoRequest {
-    // DATOS PERSONALES
-    private DestinatarioDTO destinatario;
 
-    // DIRECCIÓN COMPLETA
+    @Valid
+    @NotNull(message = "Los datos del contacto son obligatorios")
+    private ContactoDTO contacto; // Cambiado de destinatario a contacto para coincidir con el controller
+
+    @Valid
+    @NotNull(message = "La dirección es obligatoria")
     private DireccionDTO direccion;
 
-    // DATOS DEL ENVÍO
     private Double peso;
-    private Integer prioridad;  // 1=urgente, 2=normal, 3=economico
+    private Integer prioridad;
 
     @Data
-    public static class DestinatarioDTO {
+    public static class ContactoDTO {
         private String nombre;
         private String apellidos;
         private String correo;
@@ -24,14 +28,12 @@ public class PedidoRequest {
 
     @Data
     public static class DireccionDTO {
-        private String provincia;      // "Álava" o "01"
-        private String municipio;      // "ALEGRIA-DULANTZI" o "001"
-        private String tipoVia;        // "CALLE", "AVENIDA", etc.
-        private String nombreVia;      // "AÑUA BIDEA"
-        private String numero;         // "8"
-        private String codigoPostal;   // "01002"
-
-        // Opcional (si el usuario añade más detalles)
+        private String provincia;
+        private String municipio;
+        private String tipoVia;
+        private String nombreVia;
+        private String numero;
+        private String codigoPostal;
         private String piso;
         private String puerta;
         private String escalera;

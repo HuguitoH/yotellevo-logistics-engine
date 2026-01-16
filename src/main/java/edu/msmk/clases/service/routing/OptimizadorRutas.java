@@ -1,12 +1,13 @@
-package edu.msmk.clases.routing;
+package edu.msmk.clases.service.routing;
 
 import edu.msmk.clases.model.Paquete;
-import edu.msmk.clases.model.Punto;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.stereotype.Service;
 
 import java.util.*;
 
+@Service
 @Slf4j
 public class OptimizadorRutas {
 

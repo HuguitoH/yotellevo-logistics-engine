@@ -18,7 +18,8 @@ public class PedidoResponse {
     private Integer ordenEntrega;
     private Double distanciaTotal;
     private String tiempoEstimado;
-    private Object rutaGeoJson;   // JSON para el mapa de Mapbox
+    private Object rutaGeoJson;// JSON para el mapa de Mapbox
+    private String furgonetaId;
 
     // Referencias a los DTOs actualizados
     private CoordenadasDTO coordenadas;

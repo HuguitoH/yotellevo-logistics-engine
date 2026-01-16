@@ -1,16 +1,26 @@
 package edu.msmk.clases.model;
 
+import lombok.Getter;
+import lombok.Setter;
+
 import java.time.LocalDateTime;
 
+@Getter
 public class Paquete {
-    private String id;
-    private String destinatario; // Cambiado de DTO a String
-    private Direccion direccion;  // Cambiado de PeticionCliente a tu nueva clase Direccion
+    // Getters
+    private final String id;
+    private final String destinatario; // Cambiado de DTO a String
+    private final Direccion direccion;  // Cambiado de PeticionCliente a tu nueva clase Direccion
+    @Setter
     private Punto coordenadas;
-    private double peso;
+    private final double peso;
+    // Setters
+    @Setter
     private EstadoPaquete estado;
-    private LocalDateTime fechaCreacion;
+    private final LocalDateTime fechaCreacion;
+    @Setter
     private int ordenEntrega;
+    @Setter
     private int prioridad;
 
     public enum EstadoPaquete {
@@ -30,27 +40,10 @@ public class Paquete {
         this.prioridad = prioridad;
     }
 
-    // Getters
-    public String getId() { return id; }
-    public String getDestinatario() { return destinatario; }
-    public Direccion getDireccion() { return direccion; }
-    public Punto getCoordenadas() { return coordenadas; }
-    public double getPeso() { return peso; }
-    public EstadoPaquete getEstado() { return estado; }
-    public int getOrdenEntrega() { return ordenEntrega; }
-    public LocalDateTime getFechaCreacion() { return fechaCreacion; }
-    public int getPrioridad() { return prioridad; }
-
-    // Setters
-    public void setEstado(EstadoPaquete estado) { this.estado = estado; }
-    public void setOrdenEntrega(int orden) { this.ordenEntrega = orden; }
-    public void setCoordenadas(Punto coordenadas) { this.coordenadas = coordenadas; }
-    public void setPrioridad(int prioridad) { this.prioridad = prioridad; }
-
     @Override
     public String toString() {
         String coords = (coordenadas != null) ?
-                String.format("(%.4f, %.4f)", coordenadas.getLatitud(), coordenadas.getLongitud()) :
+                String.format("(%.4f, %.4f)", coordenadas.lat(), coordenadas.lon()) : // lat() y lon()
                 "sin coords";
 
         return String.format("Paquete[id=%s, dest=%s, coords=%s, peso=%.2fkg, estado=%s, prioridad=%d]",

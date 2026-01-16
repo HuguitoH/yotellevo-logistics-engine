@@ -2,47 +2,72 @@ package edu.msmk.clases.controller;
 
 import edu.msmk.clases.dto.PedidoRequest;
 import edu.msmk.clases.dto.PedidoResponse;
-import edu.msmk.clases.service.PedidosService;
+import edu.msmk.clases.service.PedidoOrquestador;
+
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import jakarta.validation.Valid;
+
 /**
- * Controller REST para gestión de pedidos
+ * Controller simplificado para gestión de pedidos.
+ *
+ * CORREGIDO: Usa request.getContacto() en lugar de getDestinatario()
  */
-@Slf4j
 @RestController
-@RequestMapping("/api/v1")
-@CrossOrigin(origins = "*")  // Permitir CORS por ahora
+@RequestMapping("/api/v1/pedidos")
+@CrossOrigin(origins = "*")
+@Slf4j
 public class PedidosController {
 
     @Autowired
-    private PedidosService pedidosService;
+    private PedidoOrquestador pedidoOrquestador;
 
     /**
-     * Endpoint para crear un nuevo pedido
-     *
      * POST /api/v1/pedidos
+     *
+     * Crea un nuevo pedido
      */
-    @PostMapping("/pedidos")
-    public ResponseEntity<PedidoResponse> crearPedido(@RequestBody PedidoRequest request) {
-        log.info("Procesando pedido para: {}", request.getDireccion()); // Mejor loguear dirección que destinatario para tracking de rutas
+    @PostMapping
+    public ResponseEntity<PedidoResponse> crearPedido(@Valid @RequestBody PedidoRequest request) {
+        log.info("📦 Nuevo pedido recibido: {} {}",
+                request.getContacto().getNombre(),
+                request.getContacto().getApellidos());
 
-        PedidoResponse response = pedidosService.procesarPedido(request);
+        PedidoResponse response = pedidoOrquestador.procesarPedido(request);
 
-        // Si hay cobertura, devolvemos 200 OK.
-        // Si NO hay cobertura, devolvemos 200 OK igualmente pero con el flag cobertura:false
-        // ¿Por qué? Porque el sistema funcionó bien, solo que el negocio dice que no llegamos.
+        if (response != null && Boolean.TRUE.equals(response.getCobertura())) {
+            log.info("Pedido {} aceptado", response.getPedidoId());
+        } else {
+            // Si response es null o cobertura es null/false
+            log.warn("Pedido rechazado o error en proceso: {}",
+                    (response != null) ? response.getMensaje() : "Respuesta nula");
+        }
+
         return ResponseEntity.ok(response);
     }
 
     /**
-     * Endpoint de prueba
+     * GET /api/v1/pedidos/estado
      */
-    @GetMapping("/health")
-    public ResponseEntity<String> health() {
-        return ResponseEntity.ok("API funcionando correctamente");
+    @GetMapping("/estado")
+    public ResponseEntity<EstadoSistema> obtenerEstado() {
+        int pendientes = pedidoOrquestador.contarPedidosPendientes();
+
+        return ResponseEntity.ok(EstadoSistema.builder()
+                .pedidosPendientes(pendientes)
+                .estado("OPERATIVO")
+                .mensaje("Sistema funcionando correctamente")
+                .build());
+    }
+
+    @lombok.Data
+    @lombok.Builder
+    public static class EstadoSistema {
+        private Integer pedidosPendientes;
+        private String estado;
+        private String mensaje;
     }
 }

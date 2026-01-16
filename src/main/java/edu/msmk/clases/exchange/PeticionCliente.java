@@ -45,8 +45,9 @@ public class PeticionCliente {
                 && via != null && numero != null;
     }
 
+
     public String getClave() {
-        // Exactamente igual que en CoberturaServicio
+        // Genera: 28_115_0_2492
         return this.provincia + "_" + this.municipio + "_" +
                 (this.unidadPoblacional != null ? this.unidadPoblacional : 0) + "_" +
                 (this.via != null ? this.via : 0);

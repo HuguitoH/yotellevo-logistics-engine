@@ -1,4 +1,4 @@
-package edu.msmk.clases.routing;
+package edu.msmk.clases.service.routing;
 
 import edu.msmk.clases.model.Paquete;
 import edu.msmk.clases.model.Punto;
@@ -142,5 +142,8 @@ public class GrafoEntregas {
             sb.append("\n");
         }
         log.info(sb.toString());
+    }
+
+    public void agregarEntrega(Paquete paquete) {
     }
 }
