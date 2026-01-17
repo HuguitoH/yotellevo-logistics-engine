@@ -1,6 +1,8 @@
 package edu.msmk.clases.controller;
 
 import edu.msmk.clases.dto.PilaVisualizacionDTO;
+import edu.msmk.clases.model.Paquete;
+import edu.msmk.clases.service.PedidoOrquestador;
 import edu.msmk.clases.service.routing.PilaService;
 
 import lombok.extern.slf4j.Slf4j;
@@ -8,6 +10,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.Collections;
 import java.util.List;
 
 /**
@@ -23,6 +26,9 @@ import java.util.List;
 @CrossOrigin(origins = "*")
 @Slf4j
 public class PilaController {
+
+    @Autowired
+    private PedidoOrquestador pedidoOrquestador;
 
     @Autowired
     private PilaService pilaService;
@@ -41,8 +47,13 @@ public class PilaController {
 
         PilaVisualizacionDTO pila = pilaService.obtenerVisualizacion(furgonetaId);
 
-        if (pila.getPaquetes() == null || pila.getPaquetes().isEmpty()) {
-            log.warn("Furgoneta {} vacía o no encontrada", furgonetaId);
+        if (pila == null) {
+            log.warn("Furgoneta {} no encontrada, devolviendo DTO vacío", furgonetaId);
+            return ResponseEntity.ok(PilaVisualizacionDTO.builder()
+                    .furgonetaId(furgonetaId)
+                    .paquetes(Collections.emptyList())
+                    .mensaje("Furgoneta no inicializada")
+                    .build());
         }
 
         return ResponseEntity.ok(pila);
@@ -61,11 +72,19 @@ public class PilaController {
         log.info("Descargando siguiente paquete de: {}", furgonetaId);
 
         try {
-            pilaService.descargarSiguiente(furgonetaId);
+            // 1. Descargamos el paquete
+            Paquete paqueteDescargado = pilaService.descargarSiguiente(furgonetaId);
+
+            // 2. Obtenemos la vista actualizada de la pila
             PilaVisualizacionDTO pilaActualizada = pilaService.obtenerVisualizacion(furgonetaId);
 
-            log.info("Paquete descargado. Quedan: {} paquetes",
-                    pilaActualizada.getPaquetesActuales());
+            log.info("Paquete descargado. Quedan: {} paquetes", pilaActualizada.getPaquetesActuales());
+
+            // 3. LA CLAVE: Si la pila está vacía (0), disparamos la auto-carga
+            if (pilaActualizada.getPaquetesActuales() == 0) {
+                log.info("Pila vacía para {}. Activando regreso al almacén y pedidos en espera...", furgonetaId);
+                pedidoOrquestador.finalizarRutaYPrepararSiguiente();
+            }
 
             return ResponseEntity.ok(pilaActualizada);
 

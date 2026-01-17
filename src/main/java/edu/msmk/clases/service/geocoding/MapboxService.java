@@ -51,26 +51,19 @@ public class MapboxService {
      * @return Punto con coordenadas, o null si no se encuentra
      */
     public Punto obtenerCoordenadas(String calle, String codigoPostal, String municipio) {
-        // Construir dirección completa
         String direccionCompleta = construirDireccionCompleta(calle, codigoPostal, municipio);
 
-        log.debug("Buscando coordenadas para: {}", direccionCompleta);
-
-        // 1. INTENTAR DESDE CACHÉ
         return coordenadasCache.get(direccionCompleta)
                 .orElseGet(() -> {
-                    // 2. SI NO ESTÁ EN CACHÉ, LLAMAR A MAPBOX
                     log.debug("No está en caché, llamando a Mapbox API");
-                    Punto punto = llamarMapboxAPI(direccionCompleta);
 
-                    // 3. GUARDAR EN CACHÉ SI SE ENCONTRÓ
+                    // CAMBIO AQUÍ: Pasamos 'municipio' como segundo argumento
+                    Punto punto = llamarMapboxAPI(direccionCompleta, municipio);
+
                     if (punto != null) {
                         coordenadasCache.put(direccionCompleta, punto);
                         log.info("Coordenadas obtenidas y guardadas en caché: {}", direccionCompleta);
-                    } else {
-                        log.warn("No se encontraron coordenadas para: {}", direccionCompleta);
                     }
-
                     return punto;
                 });
     }
@@ -78,58 +71,45 @@ public class MapboxService {
     /**
      * Llama a la API de Geocoding v6 de Mapbox.
      */
-    private Punto llamarMapboxAPI(String direccion) {
+    // 1. Cambiamos la firma para recibir el municipio esperado
+    private Punto llamarMapboxAPI(String direccion, String municipioEsperado) {
         try {
-            // Construir URL con parámetros para API v6
             String query = URLEncoder.encode(direccion, StandardCharsets.UTF_8);
-            String url = geocodingUrl +
-                    "?q=" + query +
-                    "&access_token=" + accessToken +
-                    "&country=" + defaultCountry +
-                    "&limit=1";
+            String url = geocodingUrl + "?q=" + query + "&access_token=" + accessToken + "&country=" + defaultCountry + "&limit=1";
 
-            log.debug("Llamando a Mapbox v6: {}", url.replace(accessToken, "***"));
-
-            // Hacer petición
             JsonNode response = restTemplate.getForObject(url, JsonNode.class);
 
-            // Parsear respuesta de API v6
-            if (response != null && response.has("features")) {
-                JsonNode features = response.get("features");
+            if (response != null && response.has("features") && response.get("features").size() > 0) {
+                JsonNode firstFeature = response.get("features").get(0);
 
-                if (features.isArray() && features.size() > 0) {
-                    JsonNode firstFeature = features.get(0);
-                    JsonNode geometry = firstFeature.get("geometry");
-                    JsonNode coordinates = geometry.get("coordinates");
-
-                    // Mapbox v6 también devuelve [lon, lat]
-                    double lon = coordinates.get(0).asDouble();
-                    double lat = coordinates.get(1).asDouble();
-
-                    // Extraer propiedades (v6 usa "properties")
-                    String placeName = direccion;
-                    if (firstFeature.has("properties")) {
-                        JsonNode properties = firstFeature.get("properties");
-                        if (properties.has("full_address")) {
-                            placeName = properties.get("full_address").asText();
-                        } else if (properties.has("name")) {
-                            placeName = properties.get("name").asText();
-                        }
-                    }
-
-                    log.debug("Coordenadas obtenidas: ({}, {})", lat, lon);
-
-                    return new Punto(lat, lon, placeName);
+                String fullAddressFound = "";
+                if (firstFeature.has("properties")) {
+                    fullAddressFound = firstFeature.get("properties").path("full_address").asText();
                 }
+
+                // --- VALIDACIÓN FLEXIBLE ---
+                if (municipioEsperado != null) {
+                    String municipioNormalizado = normalizarTexto(municipioEsperado);
+                    String respuestaNormalizada = normalizarTexto(fullAddressFound);
+
+                    if (!respuestaNormalizada.contains(municipioNormalizado)) {
+                        log.error("BLOQUEO DE SEGURIDAD: Mapbox devolvió una ubicación fuera de {}. Encontrado: {}",
+                                municipioEsperado, fullAddressFound);
+                        return null;
+                    }
+                }
+                // ---------------------------
+
+                JsonNode coordinates = firstFeature.get("geometry").get("coordinates");
+                double lon = coordinates.get(0).asDouble();
+                double lat = coordinates.get(1).asDouble();
+
+                return new Punto(lat, lon, fullAddressFound);
             }
-
-            log.warn("Mapbox no devolvió resultados para: {}", direccion);
-            return null;
-
         } catch (Exception e) {
             log.error("Error llamando a Mapbox API: {}", e.getMessage());
-            return null;
         }
+        return null;
     }
 
     /**
@@ -242,6 +222,57 @@ public class MapboxService {
             log.error("Error obteniendo trazado de ruta Mapbox: {}", e.getMessage());
         }
         return null;
+    }
+
+    /**
+     * Obtiene la matriz de distancias reales (en metros) entre una lista de puntos.
+     * Útil para alimentar algoritmos de optimización (TSP).
+     */
+    public double[][] obtenerMatrizDistancias(List<Punto> puntos) {
+        if (puntos == null || puntos.size() < 2) return new double[0][0];
+
+        try {
+            // 1. Formatear coordenadas: lon,lat;lon,lat...
+            StringBuilder coords = new StringBuilder();
+            for (int i = 0; i < puntos.size(); i++) {
+                coords.append(puntos.get(i).lon()).append(",").append(puntos.get(i).lat());
+                if (i < puntos.size() - 1) coords.append(";");
+            }
+
+            // 2. Llamar a Matrix API (v1)
+            // Pedimos solo 'durations' o 'distances'. En este caso 'distances' (en metros).
+            String url = "https://api.mapbox.com/directions-matrix/v1/mapbox/driving/"
+                    + coords.toString()
+                    + "?annotations=distance&access_token=" + accessToken;
+
+            log.debug("Solicitando Matriz de Distancias Mapbox para {} puntos", puntos.size());
+            JsonNode response = restTemplate.getForObject(url, JsonNode.class);
+
+            if (response != null && response.has("distances")) {
+                JsonNode distancesNode = response.get("distances");
+                int n = puntos.size();
+                double[][] matriz = new double[n][n];
+
+                for (int i = 0; i < n; i++) {
+                    for (int j = 0; j < n; j++) {
+                        // Convertimos de metros (Mapbox) a kilómetros (tu sistema)
+                        matriz[i][j] = distancesNode.get(i).get(j).asDouble() / 1000.0;
+                    }
+                }
+                return matriz;
+            }
+        } catch (Exception e) {
+            log.error("Error obteniendo matriz de distancias Mapbox: {}", e.getMessage());
+        }
+        return null;
+    }
+
+    private String normalizarTexto(String texto) {
+        if (texto == null) return "";
+        return java.text.Normalizer.normalize(texto, java.text.Normalizer.Form.NFD)
+                .replaceAll("\\p{InCombiningDiacriticalMarks}+", "")
+                .toLowerCase()
+                .trim();
     }
 
     // ========== CLASES INTERNAS ==========

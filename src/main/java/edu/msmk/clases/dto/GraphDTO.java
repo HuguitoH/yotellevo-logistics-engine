@@ -11,32 +11,30 @@ import java.util.List;
 @Data
 @Builder
 public class GraphDTO {
-
     private List<NodoDTO> nodes;
     private List<LinkDTO> links;
     private String mensaje;
 
-    /**
-     * Nodo del grafo (almacén o punto de entrega)
-     */
     @Data
     @Builder
     public static class NodoDTO {
         private String id;
-        private String tipo;        // "ALMACEN" o "ENTREGA"
+        private String tipo;
         private Double lat;
         private Double lon;
-        private String etiqueta;    // Para mostrar en el grafo
+        // Crucial para la estabilidad de la simulación en el Frontend
+        private Double x;
+        private Double y;
+        private String etiqueta;
+        private String estado;
     }
 
-    /**
-     * Enlace entre dos nodos
-     */
     @Data
     @Builder
     public static class LinkDTO {
-        private String source;      // ID del nodo origen
-        private String target;      // ID del nodo destino
-        private Double distancia;   // En kilómetros
+        private String source;
+        private String target;
+        private Double distancia;
+        private String label; // Para mostrar "2.5 km" sobre la línea
     }
 }

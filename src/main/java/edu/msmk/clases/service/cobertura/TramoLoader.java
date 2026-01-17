@@ -12,6 +12,10 @@ import java.util.concurrent.atomic.LongAdder;
 @Slf4j
 public class TramoLoader {
 
+    public static double ultimaLatenciaMs = 0;
+    public static long totalRegistrosIndexados = 0;
+    public static double ultimoThroughput = 0;
+
     private final CoberturaServicio coberturaServicio;
     private final IndiceGeografico indiceGeografico;
 
@@ -24,6 +28,7 @@ public class TramoLoader {
      * Método que recibe el nombre del archivo desde ClasesApplication
      */
     public void cargarTramosDesdeArchivo(String nombreArchivoManual) {
+        long tiempoInicio = System.nanoTime();
         log.info("📂 Iniciando ingesta de datos desde: {}", nombreArchivoManual);
 
         // Necesitamos estas variables para contar el progreso
@@ -50,9 +55,22 @@ public class TramoLoader {
                             }
                         }
                     });
+            long tiempoFin = System.nanoTime();
+
+            long duracionNanos = tiempoFin - tiempoInicio;
+            ultimaLatenciaMs = duracionNanos / 1_000_000.0; // Convertimos a milisegundos
+            totalRegistrosIndexados = procesados.sum();
+
+            // Throughput: Registros por segundo
+            if (ultimaLatenciaMs > 0) {
+                ultimoThroughput = (totalRegistrosIndexados / (ultimaLatenciaMs / 1000.0));
+            }
 
             log.info("✅ Proceso finalizado. Exitosos: {} | Errores/Ignorados: {}",
-                    procesados.sum(), errores.sum());
+                    procesados.sum(), errores.sum(),
+                    String.format("%.2f", ultimaLatenciaMs),
+                    String.format("%.2f", ultimoThroughput),
+                    totalRegistrosIndexados = procesados.sum());
 
         } catch (Exception e) {
             log.error("❌ Error crítico en el acceso al archivo: {}", e.getMessage());

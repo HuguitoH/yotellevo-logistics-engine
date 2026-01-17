@@ -6,25 +6,36 @@ import lombok.Setter;
 import java.time.LocalDateTime;
 
 @Getter
+@lombok.EqualsAndHashCode(onlyExplicitlyIncluded = true)
 public class Paquete {
-    // Getters
+
+    @lombok.EqualsAndHashCode.Include
     private final String id;
-    private final String destinatario; // Cambiado de DTO a String
-    private final Direccion direccion;  // Cambiado de PeticionCliente a tu nueva clase Direccion
+
+    private final String destinatario;
+    private final Direccion direccion;
+
     @Setter
     private Punto coordenadas;
     private final double peso;
-    // Setters
+
+    @lombok.EqualsAndHashCode.Include
     @Setter
     private EstadoPaquete estado;
+
     private final LocalDateTime fechaCreacion;
+
     @Setter
     private int ordenEntrega;
+
+    @lombok.EqualsAndHashCode.Include
     @Setter
     private int prioridad;
 
+
+
     public enum EstadoPaquete {
-        PENDIENTE, EN_ALMACEN, EN_FURGONETA, EN_RUTA, ENTREGADO, DEVUELTO
+        PENDIENTE, EN_ALMACEN, EN_FURGONETA, EN_RUTA, ENTREGADO, DEVUELTO, EN_ESPERA
     }
 
     // Constructor corregido para coincidir con PedidosService
@@ -38,6 +49,7 @@ public class Paquete {
         this.estado = EstadoPaquete.PENDIENTE;
         this.fechaCreacion = LocalDateTime.now();
         this.prioridad = prioridad;
+        this.ordenEntrega = 0;
     }
 
     @Override

@@ -10,22 +10,20 @@ import lombok.NoArgsConstructor;
 @AllArgsConstructor
 @NoArgsConstructor
 public class PedidoResponse {
-    // Campos básicos de control
     private String pedidoId;
     private String estado;
     private String mensaje;
-    private Boolean cobertura;
+
+    // CAMBIO: De Boolean (Objeto) a boolean (primitivo) para evitar nulls
+    @Builder.Default
+    private boolean cobertura = false;
+
     private Integer ordenEntrega;
     private Double distanciaTotal;
     private String tiempoEstimado;
-    private Object rutaGeoJson;// JSON para el mapa de Mapbox
+    private Object rutaGeoJson;
     private String furgonetaId;
-
-    // Referencias a los DTOs actualizados
     private CoordenadasDTO coordenadas;
-
-    // CAMBIADO: Ahora usa el nuevo GraphDTO (el de los nombres en inglés)
     private GraphDTO grafoTeorico;
-
     private String tiempoProcesamiento;
 }

@@ -19,6 +19,7 @@ public class Direccion {
     private String piso;      // Opcionales
     private String puerta;
     private String escalera;
+    private Punto punto;
 
     /**
      * Método de utilidad para obtener la dirección lista para Google Maps o Mapbox

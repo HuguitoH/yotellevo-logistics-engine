@@ -1,7 +1,10 @@
 package edu.msmk.clases.service.routing;
 
 import edu.msmk.clases.model.Paquete;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
 import lombok.Getter;
+import lombok.NoArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
@@ -9,18 +12,37 @@ import java.util.*;
 
 @Service
 @Slf4j
+
 public class OptimizadorRutas {
 
     @Getter
+    @Builder // <--- Mover aquí
+    @AllArgsConstructor // <--- Mover aquí
     public static class ResultadoOptimizacion {
         private final List<Paquete> rutaOptimizada;
         private final List<Integer> indicesRuta;
         private final double distanciaTotal;
-        private final double ahorroPorcentaje;     // Nuevo: Para el gráfico de eficiencia
-        private final double combustibleEstimado; // Nuevo: Cálculo basado en 8L/100km
+        private final double ahorroPorcentaje;
+        private final double combustibleEstimado;
         private final long tiempoCalculo;
         private final String algoritmo;
+        private final List<Paquete> ordenCarga;
 
+        // Método estático para rutas vacías
+        public static ResultadoOptimizacion vacio() {
+            return ResultadoOptimizacion.builder()
+                    .rutaOptimizada(new ArrayList<>())
+                    .indicesRuta(new ArrayList<>())
+                    .ordenCarga(new ArrayList<>())
+                    .distanciaTotal(0.0)
+                    .ahorroPorcentaje(0.0)
+                    .algoritmo("NINGUNO")
+                    .build();
+        }
+
+        // Este es el constructor que usa tu lógica de optimización actual
+        // Lo marcamos con @Builder.ObtainVia si fuera necesario, pero lo mejor es
+        // dejar que Lombok genere su propio constructor y usar este para los cálculos.
         public ResultadoOptimizacion(List<Paquete> rutaOptimizada,
                                      List<Integer> indicesRuta,
                                      double distanciaTotal,
@@ -29,13 +51,16 @@ public class OptimizadorRutas {
                                      String algoritmo) {
             this.rutaOptimizada = rutaOptimizada;
             this.indicesRuta = indicesRuta;
-            // Redondeamos a 2 decimales para que el JSON sea limpio
             this.distanciaTotal = Math.round(distanciaTotal * 100.0) / 100.0;
             this.ahorroPorcentaje = Math.round(ahorroPorcentaje * 100.0) / 100.0;
-            // Consumo estimado: 8 litros cada 100 km
             this.combustibleEstimado = Math.round((distanciaTotal * 0.08) * 100.0) / 100.0;
             this.tiempoCalculo = tiempoCalculo;
             this.algoritmo = algoritmo;
+
+            // Lógica LIFO para la carga
+            List<Paquete> inversa = new ArrayList<>(rutaOptimizada);
+            Collections.reverse(inversa);
+            this.ordenCarga = inversa;
         }
     }
 
@@ -112,7 +137,6 @@ public class OptimizadorRutas {
         long inicio = System.currentTimeMillis();
         List<Integer> ruta = new ArrayList<>(rutaInicial.getIndicesRuta());
         boolean mejora = true;
-        double distanciaActual = grafo.calcularDistanciaTotal(ruta);
 
         while (mejora) {
             mejora = false;
@@ -125,23 +149,20 @@ public class OptimizadorRutas {
 
                     if (distDespues < distAntes) {
                         invertirSegmento(ruta, i, j);
-                        distanciaActual = grafo.calcularDistanciaTotal(ruta);
                         mejora = true;
-                        log.debug("Mejora 2-opt: Nueva distancia {} km", distanciaActual);
                     }
                 }
             }
         }
 
-        List<Paquete> rutaPaquetes = new ArrayList<>();
+        // Construimos la lista final SIN modificar los objetos originales del grafo
+        List<Paquete> rutaOrdenada = new ArrayList<>();
         for (int i = 1; i < ruta.size() - 1; i++) {
-            Paquete p = grafo.getPaquete(ruta.get(i));
-            p.setOrdenEntrega(i);
-            rutaPaquetes.add(p);
+            rutaOrdenada.add(grafo.getPaquete(ruta.get(i)));
         }
 
-        return new ResultadoOptimizacion(rutaPaquetes, ruta, distanciaActual, 0,
-                System.currentTimeMillis() - inicio, "2-opt");
+        return new ResultadoOptimizacion(rutaOrdenada, ruta, grafo.calcularDistanciaTotal(ruta),
+                0, System.currentTimeMillis() - inicio, "2-opt");
     }
 
     private void invertirSegmento(List<Integer> ruta, int i, int j) {

@@ -3,6 +3,7 @@ package edu.msmk.clases;
 import edu.msmk.clases.service.cobertura.CoberturaServicio;
 import edu.msmk.clases.service.cobertura.TramoLoader;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
@@ -14,6 +15,9 @@ public class ClasesApplication implements CommandLineRunner {
     // Cambiamos TramoService por TramoLoader
     private final TramoLoader tramoLoader;
     private final CoberturaServicio coberturaServicio;
+
+    @Value("${app.archivo.tramos:TRAM.EMPRESA}") // El segundo valor es por si olvidas ponerlo en el .properties
+    private String nombreArchivoTramos;
 
     public ClasesApplication(TramoLoader tramoLoader, CoberturaServicio coberturaServicio) {
         this.tramoLoader = tramoLoader;
@@ -29,10 +33,10 @@ public class ClasesApplication implements CommandLineRunner {
         log.info("=== YO TE LO LLEVO: SISTEMA LOGÍSTICO 2026 ===");
 
         try {
-            log.info("Cargando bases de datos de tramos con el nuevo sistema CSI...");
+            log.info("Cargando bases de datos desde: {}", nombreArchivoTramos);
 
-            // Ahora este método sí acepta el String, por lo que compila perfecto
-            tramoLoader.cargarTramosDesdeArchivo("TRAM.EMPRESA");
+            // Usamos la variable inyectada desde application.properties
+            tramoLoader.cargarTramosDesdeArchivo(nombreArchivoTramos);
 
             log.info("Carga completada. El sistema está listo.");
             log.info("Endpoints activos en: http://localhost:8080/api");

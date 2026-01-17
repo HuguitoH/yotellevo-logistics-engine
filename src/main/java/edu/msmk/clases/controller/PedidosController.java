@@ -38,11 +38,17 @@ public class PedidosController {
 
         PedidoResponse response = pedidoOrquestador.procesarPedido(request);
 
-        if (response != null && Boolean.TRUE.equals(response.getCobertura())) {
-            log.info("Pedido {} aceptado", response.getPedidoId());
+        // MODIFICACIÓN: Consideramos éxito si cobertura es true O si el estado es EN_ESPERA
+        boolean esExito = response != null && (
+                response.isCobertura() || "EN_ESPERA".equals(response.getEstado())
+        );
+
+        if (esExito) {
+            log.info("✅ Pedido {} aceptado (Estado: {})",
+                    response.getPedidoId(),
+                    response.getEstado());
         } else {
-            // Si response es null o cobertura es null/false
-            log.warn("Pedido rechazado o error en proceso: {}",
+            log.warn("❌ Pedido rechazado o fuera de cobertura: {}",
                     (response != null) ? response.getMensaje() : "Respuesta nula");
         }
 

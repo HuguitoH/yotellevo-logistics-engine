@@ -15,37 +15,32 @@ import java.util.stream.Collectors;
 @Slf4j
 @Getter
 public class GrafoEntregas {
-
     private final Punto almacen;
     private final List<Paquete> paquetes;
     private final double[][] matrizDistancias;
     private final int numNodos;
 
-    public GrafoEntregas(Punto almacen, List<Paquete> paquetes) {
-        if (almacen == null) {
-            throw new IllegalArgumentException("El almacén de origen no puede ser nulo.");
-        }
-
+    /**
+     * Constructor modificado para aceptar una matriz de distancias externa (Mapbox)
+     */
+    public GrafoEntregas(Punto almacen, List<Paquete> paquetes, double[][] matrizMapbox) {
         this.almacen = almacen;
-
-        // 1. Filtrado moderno (Java 8+) para eliminar nulos y paquetes sin coordenadas
-        this.paquetes = (paquetes == null) ? new ArrayList<>() :
-                paquetes.stream()
-                        .filter(p -> p != null && p.getCoordenadas() != null)
-                        .collect(Collectors.toList());
-
-        // 2. Definición del tamaño del grafo (N+1: Almacén + Paquetes)
+        this.paquetes = (paquetes == null) ? Collections.emptyList() :
+                Collections.unmodifiableList(paquetes);
         this.numNodos = this.paquetes.size() + 1;
-        this.matrizDistancias = new double[numNodos][numNodos];
 
-        // 3. Solo calculamos si hay nodos que procesar
-        if (numNodos > 1) {
-            calcularDistancias();
+        // Si Mapbox nos da la matriz, la usamos. Si no, tenemos un fallback.
+        if (matrizMapbox != null) {
+            this.matrizDistancias = matrizMapbox;
+            log.info("Grafo creado usando Matriz Real de Mapbox.");
         } else {
-            log.warn("Grafo creado sin paquetes válidos. Solo se dispone del nodo Almacén.");
+            this.matrizDistancias = new double[numNodos][numNodos];
+            calcularDistancias(); // Tu método antiguo como backup
+            log.warn("Mapbox Matrix falló. Usando distancias matemáticas (línea recta).");
         }
     }
 
+    // Cambiado para ser más seguro con los índices
     /**
      * Calcula la matriz de adyacencia completa.
      * Complejidad O(n²) pero necesaria para algoritmos de optimización de rutas (TSP).
@@ -90,7 +85,8 @@ public class GrafoEntregas {
 
     public Paquete getPaquete(int indice) {
         if (indice <= 0 || indice > paquetes.size()) {
-            return null; // Evitamos la excepción para que el optimizador sea más fluido
+            log.warn("Índice de paquete fuera de rango: {}. (0 es el almacén)", indice);
+            return null;
         }
         return paquetes.get(indice - 1);
     }
@@ -144,6 +140,15 @@ public class GrafoEntregas {
         log.info(sb.toString());
     }
 
-    public void agregarEntrega(Paquete paquete) {
+    public void agregarEntrega(Paquete nuevoPaquete) {
+        if (nuevoPaquete == null || nuevoPaquete.getCoordenadas() == null) return;
+
+        // 1. Añadir a la lista (asumiendo que permites modificarla o creando una nueva)
+        List<Paquete> nuevaLista = new ArrayList<>(this.paquetes);
+        nuevaLista.add(nuevoPaquete);
+
+        // 2. IMPORTANTE: Debes disparar la regeneración de la matriz
+        // Si 'paquetes' es inmutable, este objeto GrafoEntregas debería ser recreado
+        // desde el Service cada vez que llega un pedido.
     }
 }

@@ -34,6 +34,7 @@ public class PilaFurgoneta {
     private final double pesoMaximo; // kg
     private final Deque<PaqueteApilado> pila;
     private int ordenCarga;
+    private double distanciaRuta;
 
     public PilaFurgoneta(String id, int capacidadMaxima, double pesoMaximo) {
         this.id = id;

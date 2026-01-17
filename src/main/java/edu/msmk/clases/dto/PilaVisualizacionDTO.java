@@ -1,7 +1,10 @@
 package edu.msmk.clases.dto;
 
+import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
+import lombok.NoArgsConstructor;
+
 import java.util.List;
 
 /**
@@ -14,6 +17,8 @@ import java.util.List;
  */
 @Data
 @Builder
+@NoArgsConstructor
+@AllArgsConstructor
 public class PilaVisualizacionDTO {
 
     // Información de la furgoneta
@@ -22,6 +27,7 @@ public class PilaVisualizacionDTO {
     private Integer paquetesActuales;
     private Double pesoTotal;
     private Double porcentajeOcupacion;
+    private Double distanciaTotal;
 
     // Lista de paquetes (ordenados de arriba a abajo de la pila)
     private List<PaqueteVisualDTO> paquetes;
