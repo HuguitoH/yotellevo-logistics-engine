@@ -21,6 +21,7 @@ public class Direccion {
     private String escalera;
     private Punto punto;
 
+
     /**
      * Método de utilidad para obtener la dirección lista para Google Maps o Mapbox
      */

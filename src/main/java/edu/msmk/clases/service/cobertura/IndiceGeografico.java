@@ -9,33 +9,24 @@ import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 
-/**
- * Índice geográfico optimizado para búsquedas logísticas.
- * * MEJORAS:
- * - Estructura de datos optimizada para evitar split() masivos.
- * - Limpieza de caracteres especiales avanzada.
- * - Estadísticas corregidas.
- */
 @Service
 @Slf4j
 public class IndiceGeografico {
 
     @Autowired
+    private NormalizacionService normalizacionService;
+
+    @Autowired
     private MaestroProvincias maestroProvincias;
 
-    // Mapa: "CPRO_NOMBRE" -> CMUM (Para búsqueda rápida por nombre)
     private final Map<String, Integer> indiceMunicipios = new ConcurrentHashMap<>();
-
-    // Mapa: "CPRO_CMUM" -> "NOMBRE ORIGINAL" (Para autocompletado)
     private final Map<String, String> nombresMunicipiosVisualizacion = new ConcurrentHashMap<>();
-
-    // Mapa: "CPRO_CMUM" -> { "NOMBRE_VIA" -> CVIA }
     private final Map<String, Map<String, Integer>> indiceVias = new ConcurrentHashMap<>();
 
     private final LevenshteinDistance levenshtein = new LevenshteinDistance(3);
 
     /**
-     * Indexa un tramo completo (Municipio y Vía)
+     * Indexa un tramo completo
      */
     public void indexarTramo(int cpro, int cmum, String nombreMunicipio, int cvia, String nombreVia) {
         indexarMunicipio(cpro, cmum, nombreMunicipio);
@@ -44,68 +35,71 @@ public class IndiceGeografico {
 
     public void indexarMunicipio(Integer cpro, Integer cmum, String nombreMunicipio) {
         if (nombreMunicipio == null) return;
-        // Forzamos limpieza total al guardar
-        String nombreNormalizado = normalizar(nombreMunicipio);
 
-        // Guardamos: "28_POZUELO DE ALARCON"
+        String nombreNormalizado = normalizacionService.normalizar(nombreMunicipio);
         indiceMunicipios.put(cpro + "_" + nombreNormalizado, cmum);
-
-        // Guardamos para el autocompletado del front
         nombresMunicipiosVisualizacion.put(cpro + "_" + cmum, nombreNormalizado);
     }
 
-
-
     public void indexarVia(Integer cpro, Integer cmum, Integer cvia, String nombreVia) {
         if (nombreVia == null) return;
+
         String claveMunicipio = cpro + "_" + cmum;
-        String nombreNormalizado = normalizar(nombreVia);
+        String nombreNormalizado = normalizacionService.normalizar(nombreVia);
 
         indiceVias.computeIfAbsent(claveMunicipio, k -> new ConcurrentHashMap<>())
                 .put(nombreNormalizado, cvia);
     }
 
     /**
-     * Resuelve código de municipio con 3 estrategias (Exacta, Contiene, Difusa)
+     * Resuelve código de municipio (3 estrategias)
      */
-
     public Integer resolverCodigoMunicipio(Integer cpro, String municipio) {
         if (cpro == null || municipio == null) return null;
 
-        String municipioNormalizado = normalizar(municipio);
+        String municipioNormalizado = normalizacionService.normalizar(municipio);
         String claveBusqueda = cpro + "_" + municipioNormalizado;
 
-        // 1. Intento exacto
+        // 1. Match exacto O(1)
         Integer cmum = indiceMunicipios.get(claveBusqueda);
         if (cmum != null) return cmum;
 
-        // 2. Si falla, buscar por "Contiene" (Muy útil para Pozuelo de Alarcón vs Pozuelo)
-        return indiceMunicipios.entrySet().stream()
-                .filter(e -> e.getKey().startsWith(cpro + "_"))
-                .filter(e -> e.getKey().contains(municipioNormalizado) || municipioNormalizado.contains(e.getKey().substring(e.getKey().indexOf("_")+1)))
-                .map(Map.Entry::getValue)
-                .findFirst()
-                .orElse(null);
+        // 2. Búsqueda por contenido (optimizada con for loop)
+        String prefijo = cpro + "_";
+        for (Map.Entry<String, Integer> entry : indiceMunicipios.entrySet()) {
+            String key = entry.getKey();
+            if (key.startsWith(prefijo)) {
+                String nombreIndexado = key.substring(prefijo.length());
+                if (nombreIndexado.contains(municipioNormalizado) ||
+                        municipioNormalizado.contains(nombreIndexado)) {
+                    return entry.getValue();
+                }
+            }
+        }
+
+        return null;
     }
-
-
 
     public Integer buscarMunicipioSimilar(Integer cpro, String municipioNormalizado) {
         Integer mejor = null;
         int mejorDist = Integer.MAX_VALUE;
         String prefijo = cpro + "_";
 
-        for (Map.Entry<String, Integer> entry : indiceMunicipios.entrySet()) {
-            if (entry.getKey().startsWith(prefijo)) {
-                String nombreIndexado = entry.getKey().substring(prefijo.length());
+        String municipioNorm = normalizacionService.normalizar(municipioNormalizado);
 
-                // Probar si uno contiene al otro (Ej: "Pozuelo" en "Pozuelo de Alarcón")
-                if (nombreIndexado.contains(municipioNormalizado) || municipioNormalizado.contains(nombreIndexado)) {
+        for (Map.Entry<String, Integer> entry : indiceMunicipios.entrySet()) {
+            String key = entry.getKey();
+            if (key.startsWith(prefijo)) {
+                String nombreIndexado = key.substring(prefijo.length());
+
+                // Fast path: contenido
+                if (nombreIndexado.contains(municipioNorm) ||
+                        municipioNorm.contains(nombreIndexado)) {
                     return entry.getValue();
                 }
 
-                // Probar Levenshtein
-                Integer dist = levenshtein.apply(municipioNormalizado, nombreIndexado);
+                // Slow path: Levenshtein (solo si no hay match)
+                Integer dist = levenshtein.apply(municipioNorm, nombreIndexado);
                 if (dist != null && dist < mejorDist && dist <= 3) {
                     mejorDist = dist;
                     mejor = entry.getValue();
@@ -116,9 +110,11 @@ public class IndiceGeografico {
     }
 
     public List<String> buscarMunicipiosPorQuery(String query, int limit) {
-        String busqueda = normalizar(query);
+        String busqueda = normalizacionService.normalizar(query);
+
+        // OPTIMIZACIÓN: Los nombres YA están normalizados, no normalizar de nuevo
         return nombresMunicipiosVisualizacion.values().stream()
-                .filter(nombre -> normalizar(nombre).contains(busqueda))
+                .filter(nombre -> nombre.contains(busqueda))
                 .distinct()
                 .sorted()
                 .limit(limit)
@@ -129,52 +125,47 @@ public class IndiceGeografico {
         return maestroProvincias.obtenerCodigo(provincia);
     }
 
-    // Solo necesitamos este para que el Parser haga su magia
     public Integer buscarViaExacta(Integer cpro, Integer cmum, String nombreVia) {
         String claveMunicipio = cpro + "_" + cmum;
         Map<String, Integer> vias = indiceVias.get(claveMunicipio);
         if (vias == null) return null;
 
-        // IMPORTANTE: Aquí normalizamos la entrada para comparar con lo indexado
-        return vias.get(normalizar(nombreVia));
+        return vias.get(normalizacionService.normalizar(nombreVia));
     }
 
     public List<SugerenciaVia> obtenerSugerencias(Integer cpro, Integer cmum, String query, int limit) {
         Map<String, Integer> vias = indiceVias.get(cpro + "_" + cmum);
         if (vias == null) return Collections.emptyList();
 
-        String queryNorm = normalizar(query);
+        String queryNorm = normalizacionService.normalizar(query);
+        List<SugerenciaVia> resultados = new ArrayList<>();
 
-        return vias.entrySet().stream()
-                .filter(e -> e.getKey().contains(queryNorm) ||
-                        (levenshtein.apply(queryNorm, e.getKey()) != null &&
-                                levenshtein.apply(queryNorm, e.getKey()) <= 3))
-                .map(e -> {
-                    Integer dist = levenshtein.apply(queryNorm, e.getKey());
-                    int d = (dist == null) ? 99 : dist;
+        // OPTIMIZACIÓN: Calcular Levenshtein UNA SOLA VEZ
+        for (Map.Entry<String, Integer> entry : vias.entrySet()) {
+            String nombreVia = entry.getKey();
 
-                    // Calcular similitud porcentual
-                    int maxLen = Math.max(queryNorm.length(), e.getKey().length());
-                    int sim = (maxLen == 0) ? 100 : (int) (((maxLen - d) / (double) maxLen) * 100);
+            // Fast path: contiene
+            if (nombreVia.contains(queryNorm)) {
+                int maxLen = Math.max(queryNorm.length(), nombreVia.length());
+                int sim = 100; // Match perfecto por contenido
+                resultados.add(new SugerenciaVia(nombreVia, entry.getValue(), sim, 0));
+                continue;
+            }
 
-                    return new SugerenciaVia(e.getKey(), e.getValue(), sim, d);
-                })
+            // Slow path: Levenshtein (UNA sola llamada)
+            Integer dist = levenshtein.apply(queryNorm, nombreVia);
+            if (dist != null && dist <= 3) {
+                int maxLen = Math.max(queryNorm.length(), nombreVia.length());
+                int sim = (maxLen == 0) ? 100 : (int) (((maxLen - dist) / (double) maxLen) * 100);
+                resultados.add(new SugerenciaVia(nombreVia, entry.getValue(), sim, dist));
+            }
+        }
+
+        // Ordenar y limitar
+        return resultados.stream()
                 .sorted(Comparator.comparingInt(SugerenciaVia::getDistancia))
                 .limit(limit)
                 .collect(Collectors.toList());
-    }
-
-    /**
-     * Normalización avanzada para evitar fallos por tildes o caracteres especiales
-     */
-    private String normalizar(String texto) {
-        if (texto == null) return "";
-        return java.text.Normalizer.normalize(texto, java.text.Normalizer.Form.NFD)
-                .replaceAll("\\p{M}", "") // Quita acentos
-                .toUpperCase()
-                .replaceAll("[^A-Z0-9 ]", "") // Quita TODO lo que no sea letra, número o espacio
-                .trim()
-                .replaceAll("\\s+", " "); // Colapsa múltiples espacios en uno solo
     }
 
     public Map<String, Object> obtenerEstadisticas() {
@@ -184,8 +175,6 @@ public class IndiceGeografico {
                 "visualizaciones", nombresMunicipiosVisualizacion.size()
         );
     }
-
-
 
     @lombok.Data
     @lombok.AllArgsConstructor

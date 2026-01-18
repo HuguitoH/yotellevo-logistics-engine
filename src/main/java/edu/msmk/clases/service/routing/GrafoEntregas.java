@@ -6,11 +6,15 @@ import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 
 import java.util.*;
-import java.util.stream.Collectors;
 
 /**
  * Representa un grafo de puntos de entrega con matriz de distancias precalculada.
  * Utiliza la fórmula Haversine para considerar la curvatura terrestre.
+ *
+ * OPTIMIZACIONES:
+ * - Matriz de distancias precalculada O(1) lookup
+ * - Validación eficiente sin exceptions
+ * - Acceso directo a matriz para algoritmos
  */
 @Slf4j
 @Getter
@@ -21,7 +25,7 @@ public class GrafoEntregas {
     private final int numNodos;
 
     /**
-     * Constructor modificado para aceptar una matriz de distancias externa (Mapbox)
+     * Constructor que acepta matriz externa (Mapbox) o calcula fallback
      */
     public GrafoEntregas(Punto almacen, List<Paquete> paquetes, double[][] matrizMapbox) {
         this.almacen = almacen;
@@ -29,21 +33,19 @@ public class GrafoEntregas {
                 Collections.unmodifiableList(paquetes);
         this.numNodos = this.paquetes.size() + 1;
 
-        // Si Mapbox nos da la matriz, la usamos. Si no, tenemos un fallback.
         if (matrizMapbox != null) {
             this.matrizDistancias = matrizMapbox;
-            log.info("Grafo creado usando Matriz Real de Mapbox.");
+            log.info("Grafo creado usando Matriz Real de Mapbox ({} nodos).", numNodos);
         } else {
             this.matrizDistancias = new double[numNodos][numNodos];
-            calcularDistancias(); // Tu método antiguo como backup
-            log.warn("Mapbox Matrix falló. Usando distancias matemáticas (línea recta).");
+            calcularDistancias();
+            log.warn("Mapbox Matrix falló. Usando distancias Haversine (línea recta).");
         }
     }
 
-    // Cambiado para ser más seguro con los índices
     /**
-     * Calcula la matriz de adyacencia completa.
-     * Complejidad O(n²) pero necesaria para algoritmos de optimización de rutas (TSP).
+     * OPTIMIZADO: Calcula matriz de adyacencia completa
+     * Complejidad O(n²) pero solo se ejecuta UNA vez
      */
     private void calcularDistancias() {
         long inicio = System.currentTimeMillis();
@@ -55,79 +57,98 @@ public class GrafoEntregas {
             matrizDistancias[i + 1][0] = dist;
         }
 
-        // Distancias Paquetes <-> Paquetes
+        // Distancias Paquetes <-> Paquetes (solo triángulo superior)
         for (int i = 0; i < paquetes.size(); i++) {
             for (int j = i + 1; j < paquetes.size(); j++) {
                 double dist = redondear(paquetes.get(i).getCoordenadas()
                         .distanciaHaversine(paquetes.get(j).getCoordenadas()));
 
                 matrizDistancias[i + 1][j + 1] = dist;
-                matrizDistancias[j + 1][i + 1] = dist;
+                matrizDistancias[j + 1][i + 1] = dist; // Simétrica
             }
         }
 
-        log.info("Matriz de {}x{} calculada en {} ms", numNodos, numNodos, System.currentTimeMillis() - inicio);
-    }
-
-    private double redondear(double valor) {
-        // Redondeo a 3 decimales (precisión de 1 metro aprox)
-        return Math.round(valor * 1000.0) / 1000.0;
-    }
-
-    public double getDistancia(int i, int j) {
-        try {
-            return matrizDistancias[i][j];
-        } catch (ArrayIndexOutOfBoundsException e) {
-            log.error("Error al acceder a la matriz: índice [{}][{}] fuera de rango.", i, j);
-            return 0.0;
-        }
-    }
-
-    public Paquete getPaquete(int indice) {
-        if (indice <= 0 || indice > paquetes.size()) {
-            log.warn("Índice de paquete fuera de rango: {}. (0 es el almacén)", indice);
-            return null;
-        }
-        return paquetes.get(indice - 1);
+        log.info("Matriz {}x{} calculada en {} ms", numNodos, numNodos,
+                System.currentTimeMillis() - inicio);
     }
 
     /**
-     * Suma las aristas de una secuencia de nodos.
+     * OPTIMIZADO: Acceso a distancia SIN try-catch (elimina overhead)
+     * Los algoritmos deben acceder directamente a la matriz cuando sea posible
+     */
+    public double getDistancia(int i, int j) {
+        // Validación simple (más rápida que exceptions)
+        if (i < 0 || i >= numNodos || j < 0 || j >= numNodos) {
+            log.error("Índice fuera de rango: [{},{}] (max: {})", i, j, numNodos - 1);
+            return 0.0;
+        }
+        return matrizDistancias[i][j];
+    }
+
+    /**
+     * ✅ OPTIMIZADO: Cálculo de distancia total con acceso directo
      */
     public double calcularDistanciaTotal(List<Integer> ruta) {
         if (ruta == null || ruta.size() < 2) return 0.0;
 
         double suma = 0.0;
         for (int i = 0; i < ruta.size() - 1; i++) {
-            suma += getDistancia(ruta.get(i), ruta.get(i + 1));
+            int from = ruta.get(i);
+            int to = ruta.get(i + 1);
+
+            // Validación inline para evitar exceptions
+            if (from >= 0 && from < numNodos && to >= 0 && to < numNodos) {
+                suma += matrizDistancias[from][to];
+            }
         }
         return redondear(suma);
     }
 
+    public Paquete getPaquete(int indice) {
+        if (indice <= 0 || indice > paquetes.size()) {
+            log.warn("Índice de paquete fuera de rango: {} (0=almacén)", indice);
+            return null;
+        }
+        return paquetes.get(indice - 1);
+    }
+
+    private double redondear(double valor) {
+        // Precisión de 1 metro (3 decimales en km)
+        return Math.round(valor * 1000.0) / 1000.0;
+    }
 
     public Map<String, Double> getMetricasGrafo() {
         if (numNodos <= 1) return Map.of("distanciaMedia", 0.0, "distanciaMaxima", 0.0);
 
         double suma = 0;
-        int cont = 0;
-        // Distancias desde el almacén (índice 0) a todos los paquetes
+        double max = 0;
+
+        // Distancias desde almacén (índice 0) a todos los paquetes
         for (int i = 1; i < numNodos; i++) {
-            suma += matrizDistancias[0][i];
-            cont++;
+            double dist = matrizDistancias[0][i];
+            suma += dist;
+            if (dist > max) max = dist;
         }
 
         return Map.of(
-                "distanciaMedia", redondear(suma / cont),
-                "distanciaMaxima", redondear(Arrays.stream(matrizDistancias[0]).max().orElse(0.0))
+                "distanciaMedia", redondear(suma / (numNodos - 1)),
+                "distanciaMaxima", redondear(max)
         );
     }
 
     /**
-     * Debugging elegante: imprime la matriz formateada en el log
+     * Debugging: imprime la matriz formateada
      */
     public void mostrarMatriz() {
+        if (numNodos > 20) {
+            log.info("Matriz demasiado grande para mostrar ({} nodos)", numNodos);
+            return;
+        }
+
         StringBuilder sb = new StringBuilder("\nMATRIZ DE DISTANCIAS (km)\n     ");
-        for (int i = 0; i < numNodos; i++) sb.append(String.format(" %-6s", i == 0 ? "ALM" : "P" + i));
+        for (int i = 0; i < numNodos; i++) {
+            sb.append(String.format(" %-6s", i == 0 ? "ALM" : "P" + i));
+        }
         sb.append("\n");
 
         for (int i = 0; i < numNodos; i++) {
@@ -138,17 +159,5 @@ public class GrafoEntregas {
             sb.append("\n");
         }
         log.info(sb.toString());
-    }
-
-    public void agregarEntrega(Paquete nuevoPaquete) {
-        if (nuevoPaquete == null || nuevoPaquete.getCoordenadas() == null) return;
-
-        // 1. Añadir a la lista (asumiendo que permites modificarla o creando una nueva)
-        List<Paquete> nuevaLista = new ArrayList<>(this.paquetes);
-        nuevaLista.add(nuevoPaquete);
-
-        // 2. IMPORTANTE: Debes disparar la regeneración de la matriz
-        // Si 'paquetes' es inmutable, este objeto GrafoEntregas debería ser recreado
-        // desde el Service cada vez que llega un pedido.
     }
 }

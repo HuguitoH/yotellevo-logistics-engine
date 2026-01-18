@@ -16,12 +16,14 @@ public class ClasesApplication implements CommandLineRunner {
     private final TramoLoader tramoLoader;
     private final CoberturaServicio coberturaServicio;
 
+
     @Value("${app.archivo.tramos:TRAM.EMPRESA}") // El segundo valor es por si olvidas ponerlo en el .properties
     private String nombreArchivoTramos;
 
     public ClasesApplication(TramoLoader tramoLoader, CoberturaServicio coberturaServicio) {
         this.tramoLoader = tramoLoader;
         this.coberturaServicio = coberturaServicio;
+
     }
 
     public static void main(String[] args) {
@@ -36,7 +38,9 @@ public class ClasesApplication implements CommandLineRunner {
             log.info("Cargando bases de datos desde: {}", nombreArchivoTramos);
 
             // Usamos la variable inyectada desde application.properties
-            tramoLoader.cargarTramosDesdeArchivo(nombreArchivoTramos);
+            tramoLoader.cargarTramosOptimizado(nombreArchivoTramos);
+
+
 
             log.info("Carga completada. El sistema está listo.");
             log.info("Endpoints activos en: http://localhost:8080/api");

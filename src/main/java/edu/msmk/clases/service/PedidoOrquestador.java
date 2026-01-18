@@ -81,7 +81,8 @@ public class PedidoOrquestador {
                     request.getDireccion().getMunicipio(),
                     request.getDireccion().getProvincia(),
                     request.getDireccion().getNombreVia(),
-                    Integer.parseInt(request.getDireccion().getNumero())
+                    Integer.parseInt(request.getDireccion().getNumero()),
+                    request.getDireccion().getCodigoPostal()
             );
 
             if (peticion == null) return rechazarPedido("Dirección no válida");

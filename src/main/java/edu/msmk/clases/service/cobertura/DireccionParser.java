@@ -15,41 +15,62 @@ public class DireccionParser {
     /**
      * Convierte texto del frontend en IDs numéricos del BOE/Empresa.
      */
-    public PeticionCliente parsear(String municipio, String provincia, String nombreVia, int numero) {
-        log.info(" Parseando dirección: {} en {}, {}", nombreVia, municipio, provincia);
+    public PeticionCliente parsear(String municipio, String provincia, String nombreVia, int numero, String cp) {
+        log.info("--- Iniciando Validación Inteligente ---");
+        log.info("Entrada: CP {}, {} en {}, {}", cp, nombreVia, municipio, provincia);
 
         try {
-            // 1. Resolvemos Provincia (Ej: "Madrid" -> 28)
-            Integer cpro = coberturaServicio.obtenerCodigoProvincia(provincia);
-            if (cpro == null) {
-                log.warn(" Provincia no reconocida: {}", provincia);
+            // 1. Extraer CPRO del Código Postal (primeros 2 dígitos)
+            // Ejemplo: "28023" -> 28
+            if (cp == null || cp.length() < 2) {
+                log.warn("Código Postal inválido: {}", cp);
                 return null;
             }
+            int cproDesdeCP = Integer.parseInt(cp.substring(0, 2));
 
-            // 2. Resolvemos Municipio (Ej: "Pozuelo" -> 115)
-            Integer cmum = coberturaServicio.obtenerCodigoMunicipio(cpro, municipio);
+            // 2. Resolvemos Provincia y comparamos con el CP
+            Integer cproBaseDatos = coberturaServicio.obtenerCodigoProvincia(provincia);
+
+            if (cproBaseDatos != null && cproBaseDatos != cproDesdeCP) {
+                log.error("INCONSISTENCIA: El CP {} es de la provincia {}, pero has escrito {}",
+                        cp, cproDesdeCP, provincia);
+                return null; // Bloqueamos el pedido por seguridad
+            }
+
+            // Si el usuario no puso provincia, usamos la del CP
+            int cproFinal = (cproBaseDatos != null) ? cproBaseDatos : cproDesdeCP;
+
+            // 3. Resolvemos Municipio dentro de esa provincia
+            Integer cmum = coberturaServicio.obtenerCodigoMunicipio(cproFinal, municipio);
             if (cmum == null) {
-                log.warn(" Municipio no encontrado en la provincia {}: {}", cpro, municipio);
+                log.warn("Municipio {} no existe en la provincia {}", municipio, cproFinal);
                 return null;
             }
 
-            // 3. Resolvemos Vía (Ej: "Calle Flores" -> 2492)
-            // Usamos el buscador estructurado que creamos en CoberturaServicio
-            Integer cvia = coberturaServicio.obtenerCodigoVia(cpro, cmum, nombreVia);
+            // 4. Limpieza de Vía (para que "De las flores" sea "FLORES")
+            String viaLimpia = nombreVia.toUpperCase()
+                    .replace("CALLE ", "")
+                    .replace("DE LAS ", "")
+                    .replace("DE LOS ", "")
+                    .replace("DE LA ", "")
+                    .replace("DEL ", "")
+                    .replace("DE ", "")
+                    .trim();
+
+            Integer cvia = coberturaServicio.obtenerCodigoVia(cproFinal, cmum, viaLimpia);
 
             if (cvia == null) {
-                log.warn(" Vía no encontrada en el sistema: {}", nombreVia);
+                log.warn("Vía no encontrada: '{}' (Buscado como: '{}')", nombreVia, viaLimpia);
                 return null;
             }
 
-            log.info("Match exitoso: CPRO={}, CMUM={}, CVIA={}, NUM={}", cpro, cmum, cvia, numero);
+            log.info("VALIDACIÓN TOTAL: CPRO={}, CMUM={}, CVIA={}, NUM={} (CP {})",
+                    cproFinal, cmum, cvia, numero, cp);
 
-            // 4. Creamos la petición con los 5 parámetros que pide tu constructor:
-            // (provincia, municipio, unidadPoblacional, via, numero)
-            return new PeticionCliente(cpro, cmum, 0, cvia, numero);
+            return new PeticionCliente(cproFinal, cmum, 0, cvia, numero);
 
         } catch (Exception e) {
-            log.error("Error en el proceso de parseo: {}", e.getMessage());
+            log.error("Error crítico en el parseo: {}", e.getMessage());
             return null;
         }
     }
