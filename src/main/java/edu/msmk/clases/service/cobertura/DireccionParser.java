@@ -16,6 +16,7 @@ public class DireccionParser {
      * Convierte texto del frontend en IDs numéricos del BOE/Empresa.
      */
     public PeticionCliente parsear(String municipio, String provincia, String nombreVia, int numero, String cp) {
+        long inicioTotal = System.nanoTime();
         log.info("--- Iniciando Validación Inteligente ---");
         log.info("Entrada: CP {}, {} en {}, {}", cp, nombreVia, municipio, provincia);
 
@@ -64,13 +65,19 @@ public class DireccionParser {
                 return null;
             }
 
-            log.info("VALIDACIÓN TOTAL: CPRO={}, CMUM={}, CVIA={}, NUM={} (CP {})",
-                    cproFinal, cmum, cvia, numero, cp);
+            long duracionMicros = (System.nanoTime() - inicioTotal) / 1_000;
+            double duracionMs = duracionMicros / 1000.0;
+
+            log.info("VALIDACIÓN TOTAL: CPRO={}, CMUM={}, CVIA={}, NUM={} (CP {}) | {} ms ({} µs)",
+                    cproFinal, cmum, cvia, numero, cp,
+                    String.format("%.3f", duracionMs), // Formateamos aquí el decimal
+                    duracionMicros);
 
             return new PeticionCliente(cproFinal, cmum, 0, cvia, numero);
 
         } catch (Exception e) {
-            log.error("Error crítico en el parseo: {}", e.getMessage());
+            long duracionMicros = (System.nanoTime() - inicioTotal) / 1_000;
+            log.error("Error en parseo ({} µs): {}", duracionMicros, e.getMessage());
             return null;
         }
     }

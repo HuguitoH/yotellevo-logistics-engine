@@ -56,6 +56,7 @@ public class CoberturaServicio {
     }
 
     public boolean damosServicio(PeticionCliente peticion) {
+        long inicio = System.nanoTime();
         if (peticion == null) return false;
 
         String clave = peticion.getClave();
@@ -67,6 +68,9 @@ public class CoberturaServicio {
                 RangoPortal rango = rangos.get(0);
                 if (rango.contieneNumero(peticion.getNumero())) {
                     peticion.setCodigoPostalOficial(rango.getCodigoPostal());
+
+                    long duracion = (System.nanoTime() - inicio) / 1_000; // microsegundos
+                    log.debug("Validación exitosa: {} en {}µs", clave, duracion);
                     return true;
                 }
             } else {
@@ -75,13 +79,18 @@ public class CoberturaServicio {
                     for (RangoPortal rango : rangos) {
                         if (rango.contieneNumero(numeroPortal)) {
                             peticion.setCodigoPostalOficial(rango.getCodigoPostal());
+
+                            long duracion = (System.nanoTime() - inicio) / 1_000; // microsegundos
+                            log.debug("Validación exitosa: {} en {}µs", clave, duracion);
                             return true;
                         }
                     }
                 }
             }
         }
-        log.warn("Sin cobertura para la clave: {}", clave);
+        long duracion = (System.nanoTime() - inicio) / 1_000;
+        log.warn("Sin cobertura: {} (validado en {}µs)", clave, duracion);
+
         return false;
     }
 
