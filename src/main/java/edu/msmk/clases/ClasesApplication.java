@@ -40,9 +40,32 @@ public class ClasesApplication implements CommandLineRunner {
             // Usamos la variable inyectada desde application.properties
             tramoLoader.cargarTramosOptimizado(nombreArchivoTramos);
 
-
-
             log.info("Carga completada. El sistema está listo.");
+
+            /*
+            // EXAMEN: PRUEBA DE COBERTURA NUMÉRICA
+
+            log.info("Prueba de traducción numérica");
+            
+            // Datos de la línea:
+            int prov = 28;
+            int mun = 115;
+            int via = 2492;
+            int num = 17;
+
+            long t1 = System.nanoTime();
+
+            PeticionCliente peticion = new PeticionCliente(prov, mun, 0, via, num);
+            boolean hayCobertura = coberturaServicio.damosServicio(peticion);
+
+            long t2 = System.nanoTime();
+
+            log.info("ID VÍA BUSCADO: {}", via);
+            log.info("¿ESTÁ EN EL ARCHIVO?: {}", hayCobertura ? "YES (CON COBERTURA)" : "NO");
+            log.info("TIEMPO DE RESPUESTA: {} µs", (t2 - t1) / 1000.0);
+
+            */
+
             log.info("Endpoints activos en: http://localhost:8080/api");
 
         } catch (Exception e) {
